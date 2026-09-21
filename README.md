@@ -76,6 +76,12 @@ the file `.env.example`.
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://abc.supabase.co` | Only with Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOi…` | Only with Supabase |
 | `NEXT_PUBLIC_SITE_URL` | `https://spendbox.site` | Recommended |
+| `ADMIN_EMAIL` | `you@spendbox.site` | For the dashboard |
+| `ADMIN_PASSWORD` | a long random string | For the dashboard |
+| `ADMIN_SESSION_SECRET` | 32+ random characters | For the dashboard |
+| `OPENAI_API_KEY` | `sk-…` | Optional |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Optional |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Optional |
 
 Notes:
 
@@ -110,6 +116,74 @@ not be delivered rather than being shown a fake success screen.
 
 ---
 
+## The admin dashboard
+
+Live at **`/admin`** on your site — for example `https://spendbox.site/admin`.
+It is not linked from anywhere public, and search engines are told not to
+index it.
+
+**To turn it on**, add three variables in Vercel and redeploy:
+
+| Variable | What it is |
+| --- | --- |
+| `ADMIN_EMAIL` | the email you sign in with |
+| `ADMIN_PASSWORD` | the password you sign in with |
+| `ADMIN_SESSION_SECRET` | a random string that keeps the login cookie honest |
+
+Generate the secret by running `openssl rand -base64 32` in a terminal, or use
+any password generator set to 32+ characters. It is not something you type — it
+just has to be long and random.
+
+To change who can sign in later, edit `ADMIN_EMAIL` / `ADMIN_PASSWORD` in Vercel
+and redeploy. There is no user list to manage and no password-reset email to
+build; everyone signed in is signed out the moment you change the secret.
+
+**What you can do there:**
+
+- **Overview** — open requests, how many are urgent, intake over the last
+  fourteen days, most-requested categories, and which categories have *no*
+  approved merchant (a request in one of those has nobody to send it to).
+- **Requests** — search and filter by status, urgency or category. Open one to
+  see everything the buyer submitted, move it through `new → sourcing → quoted
+  → won / lost`, keep internal notes, and email or call the buyer.
+- **Send to merchants** — on a request, the dashboard lists approved merchants
+  who supply those categories *and* cover that location, you tick the ones you
+  want, add an optional note, and it emails them all at once. They get the item,
+  quantity, destination and deadline — **not** the buyer's name or contact
+  details. Sending moves the request to `sourcing`.
+- **Merchants** — every application, with search and filters, and a dropdown to
+  move each between `pending → approved / rejected / paused`. Only *approved*
+  merchants are ever offered as recipients.
+
+The dashboard reads from Supabase, so it needs Supabase configured. Without it
+the pages explain what is missing rather than erroring.
+
+---
+
+## Categories being filled in automatically
+
+As someone types their request, the site works out which categories it belongs
+to and ticks them — they can still change the answer.
+
+This runs on a **built-in keyword matcher**. It needs no key, costs nothing,
+answers instantly, and it is what runs by default.
+
+If you set `OPENAI_API_KEY`, a language-model pass runs on top of it and the
+keyword matcher becomes the fallback. Anything the model returns is checked
+against the real category list before it is used, and if the model is slow
+(over 3.5 seconds), unreachable, or returns something unexpected, the keyword
+answer is used instead. The person filling the form never sees an error either
+way.
+
+`OPENAI_MODEL` and `OPENAI_BASE_URL` let you pick the model and the provider —
+any OpenAI-compatible endpoint works, so you are not locked to one company.
+
+> **A note on the model name:** there is no OpenAI model called "5.6", so
+> nothing is hardcoded to it. `OPENAI_MODEL` defaults to `gpt-4o-mini`; set it
+> to whatever model your account actually has and it will be used as-is.
+
+---
+
 ## Changing the things you will most likely want to change
 
 Almost everything you'd want to edit lives in **one file**:
@@ -132,6 +206,10 @@ Other common edits:
 | The FAQ | `components/Sections.tsx` → `FAQS` |
 | Colours and fonts | `app/globals.css` → the `@theme` block |
 | The category pictures | `public/img/*.svg` |
+| The logo and favicon | `components/Logo.tsx`, `app/icon.svg` |
+| Nigerian states and cities | `lib/geo.ts` |
+| Countries and dialling codes | `lib/geo.ts` → `COUNTRIES` |
+| Words that map to a category | `lib/classify.ts` → `KEYWORDS` |
 
 ---
 
@@ -176,6 +254,9 @@ app/
   globals.css         colours, fonts, spacing — the whole design system
   api/order/route.ts  receives buyer requests, saves and emails them
   api/vendor/route.ts receives vendor applications, saves and emails them
+  api/classify/route.ts suggests categories from what the buyer typed
+  admin/             the dashboard (sign-in, overview, requests, merchants)
+  api/admin/         sign in and out, change a status, email merchants
 
 components/
   Shell.tsx        holds the "which form is open" state for the whole page
@@ -185,16 +266,26 @@ components/
   OrderForm.tsx    the buyer's 4-step form
   VendorForm.tsx   the vendor's 5-step form
   Sheet.tsx        the pop-up panel both forms live in
-  Field.tsx        text boxes, chips, choice cards, checkboxes
+  Field.tsx        text boxes, chips, choice cards, yes/no, word counter
+  Combobox.tsx     the searchable dropdowns (country, state, city, coverage)
+  PhoneField.tsx   phone number with its dialling code
+  Logo.tsx         the S mark
   Sections.tsx     everything below the hero
 
 lib/
-  catalog.ts   categories, urgency levels, dropdown options
-  schemas.ts   the rules for what counts as a valid submission
-  email.ts     how the emails are laid out
-  resend.ts    sending
-  supabase.ts  saving
-  ratelimit.ts stops one person spamming the form
+  catalog.ts     categories, urgency levels, dropdown options
+  geo.ts         countries, dialling codes, Nigerian states and cities
+  schemas.ts     the rules for what counts as a valid submission
+  classify.ts    works out the category from the request text
+  email.ts       how the emails are laid out
+  resend.ts      sending
+  supabase.ts    saving
+  admin-auth.ts  the dashboard login
+  admin-data.ts  the dashboard's database queries
+  ratelimit.ts   stops one person spamming the form
+  useVisualViewport.ts  keeps forms above the phone keyboard
+
+middleware.ts  blocks /admin for anyone not signed in
 
 supabase/schema.sql   the database tables
 public/img/           the twelve category illustrations
@@ -213,3 +304,15 @@ public/img/           the twelve category illustrations
   was not saved.
 - **Every animation is turned off** for visitors whose device is set to
   "reduce motion".
+- **Forms are positioned against the phone's visual viewport**, not the page,
+  so the on-screen keyboard never covers the field you are typing in or the
+  button you are reaching for.
+- **Each step reveals one question at a time**, so a step opens as a single
+  thing to answer rather than a wall of inputs. A field never disappears once
+  it has appeared.
+- **Nigeria is seeded properly** — all 36 states and the FCT with their real
+  cities. Any other country falls back to free text, so nobody is blocked by a
+  list that is missing their town.
+- **The dashboard login has no user table.** Credentials live in environment
+  variables and the session is a signed cookie, so there is no account
+  database to secure, back up or leak.

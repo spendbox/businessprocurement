@@ -23,13 +23,19 @@ create table if not exists public.procurement_requests (
   need            text not null,
   categories      text[] not null default '{}',
   quantity        text,
-  attachment_note text,
+
+  -- purchase order / spreadsheet
+  has_attachment    boolean not null default false,
+  attachment_timing text check (attachment_timing in ('now','later')),
+  attachment_note   text,
 
   -- when and where
   urgency         text not null,
+  has_deadline    boolean not null default false,
   needed_by       date,
-  city            text not null,
+  country         text not null default 'Nigeria',
   region          text not null,
+  city            text not null,
   address         text,
 
   -- who is asking
@@ -57,6 +63,8 @@ create index if not exists procurement_requests_email_idx
   on public.procurement_requests (email);
 create index if not exists procurement_requests_categories_idx
   on public.procurement_requests using gin (categories);
+create index if not exists procurement_requests_region_idx
+  on public.procurement_requests (region);
 
 -- ------------------------------------------------------------
 -- Merchant applications
@@ -120,3 +128,27 @@ create index if not exists vendor_applications_regions_idx
 -- ------------------------------------------------------------
 alter table public.procurement_requests enable row level security;
 alter table public.vendor_applications  enable row level security;
+
+-- ------------------------------------------------------------
+-- Upgrading an existing database
+--
+-- If you already ran an earlier version of this file, run this
+-- block instead of the whole thing. It is safe to run twice.
+-- ------------------------------------------------------------
+alter table public.procurement_requests
+  add column if not exists has_attachment    boolean not null default false,
+  add column if not exists attachment_timing text,
+  add column if not exists has_deadline      boolean not null default false,
+  add column if not exists country           text not null default 'Nigeria';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'procurement_requests_attachment_timing_check'
+  ) then
+    alter table public.procurement_requests
+      add constraint procurement_requests_attachment_timing_check
+      check (attachment_timing in ('now','later'));
+  end if;
+end $$;

@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-<rect width="32" height="32" rx="8" fill="#0F7A52"/>
-<g fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-<path d="M6 11.5 16 6l10 5.5"/>
-<path d="M6 11.5v9L16 26l10-5.5v-9"/>
-<path d="M16 16v10M6 11.5 16 16l10-4.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+<rect width="512" height="512" rx="115" fill="#F5F4ED"/>
+<g transform="translate(256.0 256.0) scale(0.880700) translate(-358.9035 -342.2035)">
+<path d="M543.742 449.901C400.047 413.815 320.628 390.974 196.748 309.759L284.85 253.186C363.399 317.369 418.17 335.87 522.667 357.782L543.742 449.901Z" fill="#5DDA61"/>
+<path d="M175.329 216.139C284.063 165.729 347.398 153.204 462.714 150.356L447.818 251.18C394.898 247.86 354.72 249.773 316.41 258.761C278.155 267.736 241.792 283.761 196.489 308.627L175.329 216.139Z" fill="#44AC47" stroke="white"/>
+<path d="M544.118 449.302C404.858 506.011 323.134 521.861 173.689 534.051L199.07 429.764C334.441 422.117 405.246 405.776 522.708 355.72L544.118 449.302Z" fill="#2A772C"/>
 </g>
 </svg>

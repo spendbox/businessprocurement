@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { CATEGORIES, URGENCIES } from "@/lib/catalog";
 import { useShell } from "./Shell";
 import { ArrowRight, ArrowUpRight, Chevron, Storefront } from "./Icons";
+import { Logo } from "./Logo";
 
 const ease = [0.22, 0.72, 0.18, 1] as const;
 
@@ -513,9 +514,7 @@ export function Footer() {
     <footer className="border-t border-bone-200 bg-bone-100 px-5 pb-28 pt-12 sm:pb-16">
       <div className="mx-auto flex max-w-6xl flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="font-display text-[19px] font-extrabold tracking-[-0.03em] text-ink-900">
-            Spendbox
-          </p>
+          <Logo />
           <p className="mt-1.5 max-w-[34ch] text-[13.5px] leading-relaxed text-ink-400">
             Business procurement, handled by people. One message is the whole
             process.

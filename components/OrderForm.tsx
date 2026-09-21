@@ -1,37 +1,53 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  ATTACHMENT_TIMING,
   BUDGET_BANDS,
-  CATEGORY_NAMES,
+  CATEGORY_OPTIONS,
   URGENCIES,
   urgencyLabel,
   type UrgencyValue,
 } from "@/lib/catalog";
-import { orderSchema } from "@/lib/schemas";
+import {
+  COUNTRY_NAMES,
+  DEFAULT_COUNTRY,
+  COUNTRIES,
+  citiesFor,
+  statesFor,
+} from "@/lib/geo";
+import { conditionalOrderErrors, orderFields } from "@/lib/schemas";
 import { Sheet } from "./Sheet";
+import { Combobox } from "./Combobox";
+import { PhoneField } from "./PhoneField";
 import {
   CheckboxField,
   ChipGroup,
   ChoiceCards,
   Honeypot,
+  Reveal,
   SelectField,
   TextArea,
   TextField,
+  YesNo,
 } from "./Field";
-import { ArrowLeft, ArrowRight, Check } from "./Icons";
+import { ArrowLeft, ArrowRight, Check, Spark } from "./Icons";
 import type { Prefill } from "./Shell";
 
 type Draft = {
   need: string;
   categories: string[];
   quantity: string;
+  hasAttachment: boolean | null;
+  attachmentTiming: string;
   attachmentNote: string;
   urgency: UrgencyValue | "";
+  hasDeadline: boolean | null;
   neededBy: string;
-  city: string;
+  country: string;
   region: string;
+  city: string;
   address: string;
   company: string;
   contactName: string;
@@ -43,15 +59,22 @@ type Draft = {
   honeypot: string;
 };
 
+const defaultCountry =
+  COUNTRIES.find((c) => c.code === DEFAULT_COUNTRY)?.name ?? "Nigeria";
+
 const EMPTY: Draft = {
   need: "",
   categories: [],
   quantity: "",
+  hasAttachment: null,
+  attachmentTiming: "",
   attachmentNote: "",
   urgency: "",
+  hasDeadline: null,
   neededBy: "",
-  city: "",
+  country: defaultCountry,
   region: "",
+  city: "",
   address: "",
   company: "",
   contactName: "",
@@ -71,8 +94,8 @@ const STEPS = [
 ] as const;
 
 const FIELDS_BY_STEP: Record<number, (keyof Draft)[]> = {
-  0: ["need", "categories", "quantity", "attachmentNote"],
-  1: ["urgency", "neededBy", "city", "region", "address"],
+  0: ["need", "categories", "quantity", "hasAttachment", "attachmentTiming", "attachmentNote"],
+  1: ["urgency", "hasDeadline", "neededBy", "country", "region", "city", "address"],
   2: ["company", "contactName", "email", "phone", "budget", "notes"],
   3: [],
 };
@@ -100,33 +123,101 @@ export function OrderForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
 
+  /* Category suggestion state */
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggested, setSuggested] = useState<string[]>([]);
+  const pickedByHand = useRef((prefill.categories ?? []).length > 0);
+
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
     setErrors((e) => (e[key] ? { ...e, [key]: "" } : e));
   };
 
-  const toggleCategory = (name: string) =>
+  const toggleCategory = (name: string) => {
+    pickedByHand.current = true;
     setDraft((d) => ({
       ...d,
       categories: d.categories.includes(name)
         ? d.categories.filter((c) => c !== name)
         : [...d.categories, name],
     }));
+    setErrors((e) => (e.categories ? { ...e, categories: "" } : e));
+  };
 
-  /** Validate only the fields belonging to the step being left. */
+  /*
+   * Work out the category from what they typed, so nobody has to scan a
+   * list of twelve. Debounced, and it never overrides a choice made by
+   * hand — it only fills in the blank.
+   */
+  useEffect(() => {
+    const text = draft.need.trim();
+    if (text.length < 12 || pickedByHand.current) {
+      setSuggesting(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSuggesting(true);
+      try {
+        const response = await fetch("/api/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+          signal: controller.signal,
+        });
+        const data = (await response.json()) as { categories?: string[] };
+        const picks = Array.isArray(data.categories) ? data.categories : [];
+        if (picks.length > 0 && !pickedByHand.current) {
+          setSuggested(picks);
+          setDraft((d) => ({ ...d, categories: picks }));
+        }
+      } catch {
+        // A missed suggestion is not worth showing anyone an error over.
+      } finally {
+        setSuggesting(false);
+      }
+    }, 700);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+      setSuggesting(false);
+    };
+  }, [draft.need]);
+
+  /* Clear the state and city when the country changes under them. */
+  useEffect(() => {
+    setDraft((d) => {
+      if (!d.region && !d.city) return d;
+      const states = statesFor(d.country);
+      if (states.length > 0 && !states.includes(d.region)) {
+        return { ...d, region: "", city: "" };
+      }
+      return d;
+    });
+  }, [draft.country]);
+
   const validateStep = (index: number) => {
     const keys = FIELDS_BY_STEP[index] ?? [];
     if (keys.length === 0) return true;
-    const result = orderSchema.safeParse(draft);
-    if (result.success) return true;
 
     const stepErrors: Record<string, string> = {};
-    for (const issue of result.error.issues) {
-      const key = String(issue.path[0] ?? "");
-      if (keys.includes(key as keyof Draft) && !stepErrors[key]) {
-        stepErrors[key] = issue.message;
+    const result = orderFields.safeParse(draft);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        const key = String(issue.path[0] ?? "");
+        if (keys.includes(key as keyof Draft) && !stepErrors[key]) {
+          stepErrors[key] = issue.message;
+        }
       }
     }
+    for (const [key, message] of Object.entries(conditionalOrderErrors(draft))) {
+      if (keys.includes(key as keyof Draft) && !stepErrors[key]) {
+        stepErrors[key] = message;
+      }
+    }
+
     if (Object.keys(stepErrors).length === 0) return true;
     setErrors(stepErrors);
     return false;
@@ -166,16 +257,13 @@ export function OrderForm({
       if (!response.ok || !data?.ok) {
         if (data?.errors) setErrors(data.errors);
         setFormError(
-          data?.message ??
-            "Something went wrong on our side. Try again in a moment.",
+          data?.message ?? "Something went wrong on our side. Try again in a moment.",
         );
         return;
       }
       setReference(data.reference as string);
     } catch {
-      setFormError(
-        "We could not reach the server. Check your connection and try again.",
-      );
+      setFormError("We could not reach the server. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
@@ -185,6 +273,9 @@ export function OrderForm({
   const current = STEPS[step];
   const done = Boolean(reference);
 
+  const states = statesFor(draft.country);
+  const cities = citiesFor(draft.country, draft.region);
+
   return (
     <Sheet
       open={open}
@@ -192,6 +283,7 @@ export function OrderForm({
       title={done ? "Request received" : current.title}
       subtitle={done ? undefined : current.subtitle}
       progress={done ? 1 : (step + 1) / STEPS.length}
+      scrollKey={done ? "done" : current.key}
       footer={
         done ? (
           <button
@@ -250,10 +342,10 @@ export function OrderForm({
             <motion.div
               key={current.key}
               custom={direction}
-              initial={{ opacity: 0, x: direction * 28 }}
+              initial={{ opacity: 0, x: direction * 24 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: direction * -28 }}
-              transition={{ duration: 0.32, ease }}
+              exit={{ opacity: 0, x: direction * -24 }}
+              transition={{ duration: 0.3, ease }}
               className="flex flex-col gap-6 pt-1"
             >
               {step === 0 && (
@@ -268,31 +360,84 @@ export function OrderForm({
                     rows={4}
                     autoFocus
                   />
-                  <ChipGroup
-                    label="Which category is it closest to?"
-                    hint="Pick as many as apply — it decides which merchants we ask."
-                    options={CATEGORY_NAMES}
-                    selected={draft.categories}
-                    onToggle={toggleCategory}
-                    error={errors.categories}
-                  />
-                  <TextField
-                    label="Quantity or spec reference"
-                    optional
-                    placeholder="e.g. 50 units, or 'per attached BOQ'"
-                    value={draft.quantity}
-                    onChange={(v) => set("quantity", v)}
-                    error={errors.quantity}
-                  />
-                  <TextField
-                    label="Have a purchase order or spreadsheet?"
-                    optional
-                    hint="Tell us here and we will reply to collect the file, then quote against it line by line."
-                    placeholder="e.g. Yes — a 40-line BOQ in Excel"
-                    value={draft.attachmentNote}
-                    onChange={(v) => set("attachmentNote", v)}
-                    error={errors.attachmentNote}
-                  />
+
+                  <Reveal show={draft.need.trim().length >= 10}>
+                    <div className="flex flex-col gap-6">
+                      <div className="flex flex-col gap-2">
+                        <SuggestionNote
+                          busy={suggesting}
+                          suggested={suggested}
+                          applies={
+                            suggested.length > 0 &&
+                            !pickedByHand.current &&
+                            suggested.every((s) => draft.categories.includes(s))
+                          }
+                        />
+                        <ChipGroup
+                          label="Which category is it closest to?"
+                          hint="Adjust these if we guessed wrong."
+                          options={CATEGORY_OPTIONS}
+                          selected={draft.categories}
+                          onToggle={toggleCategory}
+                          error={errors.categories}
+                        />
+                      </div>
+                    </div>
+                  </Reveal>
+
+                  <Reveal show={draft.categories.length > 0}>
+                    <div className="flex flex-col gap-6">
+                      <TextField
+                        label="Quantity or spec reference"
+                        optional
+                        placeholder="e.g. 50 units, or 'per attached BOQ'"
+                        value={draft.quantity}
+                        onChange={(v) => set("quantity", v)}
+                        error={errors.quantity}
+                      />
+
+                      <YesNo
+                        label="Do you have a purchase order or spreadsheet?"
+                        hint="If you do, we quote against it line by line instead of guessing."
+                        value={draft.hasAttachment}
+                        onChange={(v) => {
+                          set("hasAttachment", v);
+                          if (!v) {
+                            set("attachmentTiming", "");
+                            set("attachmentNote", "");
+                          }
+                        }}
+                        yesLabel="Yes, I have one"
+                        noLabel="No, just my description"
+                        error={errors.hasAttachment}
+                      />
+                    </div>
+                  </Reveal>
+
+                  <Reveal show={draft.hasAttachment === true}>
+                    <div className="flex flex-col gap-6">
+                      <ChoiceCards
+                        label="When would you like to send it?"
+                        options={ATTACHMENT_TIMING.map((t) => ({
+                          value: t.value,
+                          label: t.label,
+                          detail: t.detail,
+                        }))}
+                        value={draft.attachmentTiming as "now" | "later" | ""}
+                        onChange={(v) => set("attachmentTiming", v)}
+                        error={errors.attachmentTiming}
+                      />
+                      <TextField
+                        label="What is in the file?"
+                        optional
+                        hint="A line about it helps us line up the right merchants before it even arrives."
+                        placeholder="e.g. a 40-line BOQ in Excel"
+                        value={draft.attachmentNote}
+                        onChange={(v) => set("attachmentNote", v)}
+                        error={errors.attachmentNote}
+                      />
+                    </div>
+                  </Reveal>
                 </>
               )}
 
@@ -311,44 +456,82 @@ export function OrderForm({
                     onChange={(v) => set("urgency", v)}
                     error={errors.urgency}
                   />
-                  <TextField
-                    label="Is there a hard deadline?"
-                    optional
-                    hint="A date it must be on site by, if you have one."
-                    type="date"
-                    min={today}
-                    value={draft.neededBy}
-                    onChange={(v) => set("neededBy", v)}
-                    error={errors.neededBy}
-                  />
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <TextField
-                      label="City"
-                      placeholder="Ikeja"
-                      value={draft.city}
-                      onChange={(v) => set("city", v)}
-                      error={errors.city}
-                      autoComplete="address-level2"
+
+                  <Reveal show={Boolean(draft.urgency)}>
+                    <YesNo
+                      label="Is there a hard deadline?"
+                      hint="A date it must be on site by, not just when you would like it."
+                      value={draft.hasDeadline}
+                      onChange={(v) => {
+                        set("hasDeadline", v);
+                        if (!v) set("neededBy", "");
+                      }}
+                      error={errors.hasDeadline}
                     />
+                  </Reveal>
+
+                  <Reveal show={draft.hasDeadline === true}>
                     <TextField
-                      label="State or region"
-                      placeholder="Lagos"
-                      value={draft.region}
-                      onChange={(v) => set("region", v)}
-                      error={errors.region}
-                      autoComplete="address-level1"
+                      label="It must be there by"
+                      type="date"
+                      min={today}
+                      value={draft.neededBy}
+                      onChange={(v) => set("neededBy", v)}
+                      error={errors.neededBy}
                     />
-                  </div>
-                  <TextField
-                    label="Delivery address"
-                    optional
-                    hint="Only if you already know it — we can collect this later."
-                    placeholder="12 Allen Avenue, Ikeja"
-                    value={draft.address}
-                    onChange={(v) => set("address", v)}
-                    error={errors.address}
-                    autoComplete="street-address"
-                  />
+                  </Reveal>
+
+                  <Reveal show={draft.hasDeadline !== null}>
+                    <div className="flex flex-col gap-6">
+                      <Combobox
+                        label="Country"
+                        options={COUNTRY_NAMES}
+                        value={draft.country}
+                        onChange={(v) => set("country", v)}
+                        placeholder="Search countries"
+                        error={errors.country}
+                      />
+
+                      <Combobox
+                        label="State or region"
+                        options={states}
+                        value={draft.region}
+                        onChange={(v) => set("region", v)}
+                        allowCustom={states.length === 0}
+                        placeholder={
+                          states.length > 0 ? "Search states" : "Type your state or region"
+                        }
+                        error={errors.region}
+                      />
+                    </div>
+                  </Reveal>
+
+                  <Reveal show={Boolean(draft.region)}>
+                    <div className="flex flex-col gap-6">
+                      <Combobox
+                        label="City or area"
+                        options={cities}
+                        value={draft.city}
+                        onChange={(v) => set("city", v)}
+                        allowCustom
+                        placeholder={
+                          cities.length > 0 ? "Search cities" : "Type your city"
+                        }
+                        emptyMessage="Not on the list — type it in full and we will use that."
+                        error={errors.city}
+                      />
+                      <TextField
+                        label="Delivery address"
+                        optional
+                        hint="Only if you already know it — we can collect this later."
+                        placeholder="12 Allen Avenue"
+                        value={draft.address}
+                        onChange={(v) => set("address", v)}
+                        error={errors.address}
+                        autoComplete="street-address"
+                      />
+                    </div>
+                  </Reveal>
                 </>
               )}
 
@@ -363,15 +546,19 @@ export function OrderForm({
                     autoComplete="organization"
                     autoFocus
                   />
-                  <TextField
-                    label="Your name"
-                    placeholder="Ada Okoye"
-                    value={draft.contactName}
-                    onChange={(v) => set("contactName", v)}
-                    error={errors.contactName}
-                    autoComplete="name"
-                  />
-                  <div className="grid gap-4 sm:grid-cols-2">
+
+                  <Reveal show={draft.company.trim().length >= 2}>
+                    <TextField
+                      label="Your name"
+                      placeholder="Ada Okoye"
+                      value={draft.contactName}
+                      onChange={(v) => set("contactName", v)}
+                      error={errors.contactName}
+                      autoComplete="name"
+                    />
+                  </Reveal>
+
+                  <Reveal show={draft.contactName.trim().length >= 2}>
                     <TextField
                       label="Email"
                       type="email"
@@ -381,40 +568,46 @@ export function OrderForm({
                       error={errors.email}
                       autoComplete="email"
                     />
-                    <TextField
-                      label="Phone"
-                      type="tel"
-                      placeholder="+234 801 234 5678"
+                  </Reveal>
+
+                  <Reveal show={draft.email.includes("@")}>
+                    <PhoneField
                       value={draft.phone}
                       onChange={(v) => set("phone", v)}
+                      countryName={draft.country}
+                      hint="We only call if something about the request needs clarifying."
                       error={errors.phone}
-                      autoComplete="tel"
                     />
-                  </div>
-                  <SelectField
-                    label="Rough budget"
-                    optional
-                    hint="A band is enough. It helps us bring back offers you would actually accept."
-                    options={BUDGET_BANDS}
-                    value={draft.budget}
-                    onChange={(v) => set("budget", v)}
-                    error={errors.budget}
-                  />
-                  <CheckboxField
-                    label="This is a recurring need"
-                    detail="Tick this and we will price it as an ongoing supply rather than a one-off."
-                    checked={draft.recurring}
-                    onChange={(v) => set("recurring", v)}
-                  />
-                  <TextArea
-                    label="Anything else we should know?"
-                    optional
-                    placeholder="Site access hours, preferred brands, invoicing requirements…"
-                    value={draft.notes}
-                    onChange={(v) => set("notes", v)}
-                    error={errors.notes}
-                    rows={3}
-                  />
+                  </Reveal>
+
+                  <Reveal show={draft.phone.replace(/\D/g, "").length >= 8}>
+                    <div className="flex flex-col gap-6">
+                      <SelectField
+                        label="Rough budget"
+                        optional
+                        hint="A band is enough. It helps us bring back offers you would actually accept."
+                        options={BUDGET_BANDS}
+                        value={draft.budget}
+                        onChange={(v) => set("budget", v)}
+                        error={errors.budget}
+                      />
+                      <CheckboxField
+                        label="This is a recurring need"
+                        detail="Tick this and we will price it as an ongoing supply rather than a one-off."
+                        checked={draft.recurring}
+                        onChange={(v) => set("recurring", v)}
+                      />
+                      <TextArea
+                        label="Anything else we should know?"
+                        optional
+                        placeholder="Site access hours, preferred brands, invoicing requirements…"
+                        value={draft.notes}
+                        onChange={(v) => set("notes", v)}
+                        error={errors.notes}
+                        rows={3}
+                      />
+                    </div>
+                  </Reveal>
                 </>
               )}
 
@@ -445,6 +638,31 @@ export function OrderForm({
 }
 
 /* ------------------------------------------------------------------ */
+
+function SuggestionNote({
+  busy,
+  suggested,
+  applies,
+}: {
+  busy: boolean;
+  suggested: string[];
+  applies: boolean;
+}) {
+  if (!busy && !applies) return null;
+  return (
+    <motion.p
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex items-center gap-2 text-[12.5px] font-semibold text-forest-500"
+      aria-live="polite"
+    >
+      <Spark className="h-4 w-4 shrink-0" />
+      {busy
+        ? "Reading your request…"
+        : `Picked ${suggested.length === 1 ? "this" : "these"} from your description`}
+    </motion.p>
+  );
+}
 
 function Row({ label, value }: { label: string; value: string }) {
   if (!value.trim()) return null;
@@ -488,28 +706,37 @@ function Group({
   );
 }
 
-function Review({
-  draft,
-  onEdit,
-}: {
-  draft: Draft;
-  onEdit: (index: number) => void;
-}) {
+function Review({ draft, onEdit }: { draft: Draft; onEdit: (index: number) => void }) {
+  const attachment =
+    draft.hasAttachment === true
+      ? `Yes — ${
+          ATTACHMENT_TIMING.find((t) => t.value === draft.attachmentTiming)?.label ??
+          "sending it"
+        }${draft.attachmentNote ? ` (${draft.attachmentNote})` : ""}`
+      : draft.hasAttachment === false
+        ? "No — working from the description"
+        : "";
+
   return (
     <div className="flex flex-col gap-3 pt-1">
       <Group title="What you need" onEdit={() => onEdit(0)}>
         <Row label="Request" value={draft.need} />
         <Row label="Categories" value={draft.categories.join(", ")} />
         <Row label="Quantity / spec" value={draft.quantity} />
-        <Row label="Attachment" value={draft.attachmentNote} />
+        <Row label="Purchase order" value={attachment} />
       </Group>
 
       <Group title="When and where" onEdit={() => onEdit(1)}>
         <Row label="Urgency" value={draft.urgency ? urgencyLabel(draft.urgency) : ""} />
-        <Row label="Hard deadline" value={draft.neededBy} />
+        <Row
+          label="Hard deadline"
+          value={draft.hasDeadline ? draft.neededBy : draft.hasDeadline === false ? "No" : ""}
+        />
         <Row
           label="Deliver to"
-          value={[draft.address, draft.city, draft.region].filter(Boolean).join(", ")}
+          value={[draft.address, draft.city, draft.region, draft.country]
+            .filter(Boolean)
+            .join(", ")}
         />
       </Group>
 

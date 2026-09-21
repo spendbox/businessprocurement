@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useShell } from "./Shell";
 import { Storefront } from "./Icons";
+import { LogoMark } from "./Logo";
 
 export function SiteHeader() {
   const { openVendor } = useShell();
@@ -28,15 +29,7 @@ export function SiteHeader() {
           href="#top"
           className="flex items-center gap-2 font-display text-[19px] font-extrabold tracking-[-0.03em] text-ink-900"
         >
-          <span
-            aria-hidden
-            className="grid h-7 w-7 place-items-center rounded-[9px] bg-forest-500 text-white"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5Z" />
-              <path d="M12 12v8M4 8.5 12 12l8-3.5" />
-            </svg>
-          </span>
+          <LogoMark className="h-8 w-8 shrink-0" />
           Spendbox
         </a>
 

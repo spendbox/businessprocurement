@@ -4,17 +4,22 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   BUSINESS_AGE,
-  CATEGORY_NAMES,
+  CATEGORY_OPTIONS,
   FULFILMENT_SPEEDS,
   PAYMENT_TERMS,
-  REGIONS,
+  VENDOR_ROLES,
 } from "@/lib/catalog";
+import { COVERAGE_AREAS } from "@/lib/geo";
 import { vendorSchema } from "@/lib/schemas";
 import { Sheet } from "./Sheet";
+import { MultiCombobox } from "./Combobox";
+import { PhoneField } from "./PhoneField";
 import {
   CheckboxField,
   ChipGroup,
+  CountedTextArea,
   Honeypot,
+  Reveal,
   SelectField,
   TextArea,
   TextField,
@@ -37,6 +42,7 @@ type Draft = {
   monthlyCapacity: string;
   contactName: string;
   role: string;
+  roleOther: string;
   email: string;
   phone: string;
   notes: string;
@@ -58,6 +64,7 @@ const EMPTY: Draft = {
   monthlyCapacity: "",
   contactName: "",
   role: "",
+  roleOther: "",
   email: "",
   phone: "",
   notes: "",
@@ -155,7 +162,7 @@ export function VendorForm({
       const response = await fetch("/api/vendor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
+        body: JSON.stringify({ ...draft, role: resolvedRole(draft) }),
       });
       const data = await response.json().catch(() => null);
 
@@ -187,6 +194,7 @@ export function VendorForm({
       title={done ? "Application received" : current.title}
       subtitle={done ? undefined : current.subtitle}
       progress={done ? 1 : (step + 1) / STEPS.length}
+      scrollKey={done ? "done" : current.key}
       footer={
         done ? (
           <button
@@ -270,33 +278,39 @@ export function VendorForm({
                     autoComplete="organization"
                     autoFocus
                   />
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <TextField
-                      label="RC number"
-                      optional
-                      hint="Speeds up approval."
-                      placeholder="RC 1234567"
-                      value={draft.rcNumber}
-                      onChange={(v) => set("rcNumber", v)}
-                      error={errors.rcNumber}
+
+                  <Reveal show={draft.company.trim().length >= 2}>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <TextField
+                        label="RC number"
+                        optional
+                        hint="Speeds up approval."
+                        placeholder="RC 1234567"
+                        value={draft.rcNumber}
+                        onChange={(v) => set("rcNumber", v)}
+                        error={errors.rcNumber}
+                      />
+                      <TextField
+                        label="Website or socials"
+                        optional
+                        placeholder="kanemsupplies.com"
+                        value={draft.website}
+                        onChange={(v) => set("website", v)}
+                        error={errors.website}
+                        autoComplete="url"
+                      />
+                    </div>
+                  </Reveal>
+
+                  <Reveal show={draft.company.trim().length >= 2}>
+                    <SelectField
+                      label="How long have you been trading?"
+                      options={BUSINESS_AGE}
+                      value={draft.yearsTrading}
+                      onChange={(v) => set("yearsTrading", v)}
+                      error={errors.yearsTrading}
                     />
-                    <TextField
-                      label="Website or socials"
-                      optional
-                      placeholder="kanemsupplies.com"
-                      value={draft.website}
-                      onChange={(v) => set("website", v)}
-                      error={errors.website}
-                      autoComplete="url"
-                    />
-                  </div>
-                  <SelectField
-                    label="How long have you been trading?"
-                    options={BUSINESS_AGE}
-                    value={draft.yearsTrading}
-                    onChange={(v) => set("yearsTrading", v)}
-                    error={errors.yearsTrading}
-                  />
+                  </Reveal>
                 </>
               )}
 
@@ -305,98 +319,131 @@ export function VendorForm({
                   <ChipGroup
                     label="Which categories do you supply?"
                     hint="Only pick the ones you can genuinely deliver on — these are the requests you will be sent."
-                    options={CATEGORY_NAMES}
+                    options={CATEGORY_OPTIONS}
                     selected={draft.categories}
                     onToggle={(v) => toggle("categories", v)}
                     error={errors.categories}
                   />
-                  <TextArea
-                    label="What exactly do you supply?"
-                    hint="Brands you carry, whether you manufacture or import, anything that sets you apart."
-                    placeholder="We import and distribute medical consumables — gloves, syringes, dressings — from three manufacturers, with a warehouse in Apapa."
-                    value={draft.supplyDescription}
-                    onChange={(v) => set("supplyDescription", v)}
-                    error={errors.supplyDescription}
-                    rows={4}
-                  />
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <TextField
-                      label="Minimum order"
-                      optional
-                      placeholder="e.g. ₦250,000 or 10 cartons"
-                      value={draft.moq}
-                      onChange={(v) => set("moq", v)}
-                      error={errors.moq}
+
+                  <Reveal show={draft.categories.length > 0}>
+                    <CountedTextArea
+                      label="What exactly do you supply?"
+                      hint="Brands you carry, whether you manufacture or import, anything that sets you apart."
+                      placeholder="We import and distribute medical consumables — gloves, syringes, dressings — from three manufacturers, with a warehouse in Apapa."
+                      value={draft.supplyDescription}
+                      onChange={(v) => set("supplyDescription", v)}
+                      error={errors.supplyDescription}
+                      rows={4}
+                      minWords={15}
+                      idealWords={60}
                     />
-                    <SelectField
-                      label="Typical fulfilment speed"
-                      options={FULFILMENT_SPEEDS}
-                      value={draft.fulfilmentSpeed}
-                      onChange={(v) => set("fulfilmentSpeed", v)}
-                      error={errors.fulfilmentSpeed}
-                    />
-                  </div>
+                  </Reveal>
+
+                  <Reveal show={draft.supplyDescription.trim().length >= 20}>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <TextField
+                        label="Minimum order"
+                        optional
+                        placeholder="e.g. ₦250,000 or 10 cartons"
+                        value={draft.moq}
+                        onChange={(v) => set("moq", v)}
+                        error={errors.moq}
+                      />
+                      <SelectField
+                        label="Typical fulfilment speed"
+                        options={FULFILMENT_SPEEDS}
+                        value={draft.fulfilmentSpeed}
+                        onChange={(v) => set("fulfilmentSpeed", v)}
+                        error={errors.fulfilmentSpeed}
+                      />
+                    </div>
+                  </Reveal>
                 </>
               )}
 
               {step === 2 && (
                 <>
-                  <ChipGroup
+                  <MultiCombobox
                     label="Where can you deliver?"
-                    hint="Pick everywhere you can actually reach, not just where you are based."
-                    options={REGIONS}
+                    hint="Search for every state you can actually reach, not just where you are based."
+                    options={COVERAGE_AREAS}
                     selected={draft.regions}
                     onToggle={(v) => toggle("regions", v)}
+                    onClear={() => setDraft((d) => ({ ...d, regions: [] }))}
+                    placeholder="Search states, or pick Nationwide"
                     error={errors.regions}
                   />
-                  <CheckboxField
-                    label="We handle our own delivery"
-                    detail="Leave this unticked if you would rather we arrange the logistics."
-                    checked={draft.ownLogistics}
-                    onChange={(v) => set("ownLogistics", v)}
-                  />
-                  <SelectField
-                    label="Preferred payment terms"
-                    options={PAYMENT_TERMS}
-                    value={draft.paymentTerms}
-                    onChange={(v) => set("paymentTerms", v)}
-                    error={errors.paymentTerms}
-                  />
-                  <TextField
-                    label="Rough monthly capacity"
-                    optional
-                    hint="Helps us size the requests we send you."
-                    placeholder="e.g. up to ₦20m of stock per month"
-                    value={draft.monthlyCapacity}
-                    onChange={(v) => set("monthlyCapacity", v)}
-                    error={errors.monthlyCapacity}
-                  />
+
+                  <Reveal show={draft.regions.length > 0}>
+                    <div className="flex flex-col gap-6">
+                      <CheckboxField
+                        label="We handle our own delivery"
+                        detail="Leave this unticked if you would rather we arrange the logistics."
+                        checked={draft.ownLogistics}
+                        onChange={(v) => set("ownLogistics", v)}
+                      />
+                      <SelectField
+                        label="Preferred payment terms"
+                        options={PAYMENT_TERMS}
+                        value={draft.paymentTerms}
+                        onChange={(v) => set("paymentTerms", v)}
+                        error={errors.paymentTerms}
+                      />
+                    </div>
+                  </Reveal>
+
+                  <Reveal show={Boolean(draft.paymentTerms)}>
+                    <TextField
+                      label="Rough monthly capacity"
+                      optional
+                      hint="Helps us size the requests we send you."
+                      placeholder="e.g. up to ₦20m of stock per month"
+                      value={draft.monthlyCapacity}
+                      onChange={(v) => set("monthlyCapacity", v)}
+                      error={errors.monthlyCapacity}
+                    />
+                  </Reveal>
                 </>
               )}
 
               {step === 3 && (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <TextField
-                      label="Contact name"
-                      placeholder="Musa Bello"
-                      value={draft.contactName}
-                      onChange={(v) => set("contactName", v)}
-                      error={errors.contactName}
-                      autoComplete="name"
-                      autoFocus
-                    />
-                    <TextField
-                      label="Role"
-                      optional
-                      placeholder="Sales lead"
-                      value={draft.role}
-                      onChange={(v) => set("role", v)}
-                      error={errors.role}
-                      autoComplete="organization-title"
-                    />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Contact name"
+                    placeholder="Musa Bello"
+                    value={draft.contactName}
+                    onChange={(v) => set("contactName", v)}
+                    error={errors.contactName}
+                    autoComplete="name"
+                    autoFocus
+                  />
+
+                  <Reveal show={draft.contactName.trim().length >= 2}>
+                    <div className="flex flex-col gap-6">
+                      <SelectField
+                        label="Role"
+                        optional
+                        options={VENDOR_ROLES}
+                        value={draft.role}
+                        onChange={(v) => {
+                          set("role", v);
+                          if (v !== "Other") set("roleOther", "");
+                        }}
+                        error={errors.role}
+                      />
+                      <Reveal show={draft.role === "Other"}>
+                        <TextField
+                          label="What is your role?"
+                          placeholder="e.g. Warehouse lead"
+                          value={draft.roleOther}
+                          onChange={(v) => set("roleOther", v)}
+                          error={errors.roleOther}
+                        />
+                      </Reveal>
+                    </div>
+                  </Reveal>
+
+                  <Reveal show={draft.contactName.trim().length >= 2}>
                     <TextField
                       label="Email"
                       type="email"
@@ -406,25 +453,33 @@ export function VendorForm({
                       error={errors.email}
                       autoComplete="email"
                     />
-                    <TextField
-                      label="Phone"
-                      type="tel"
-                      placeholder="+234 802 345 6789"
+                  </Reveal>
+
+                  <Reveal show={draft.email.includes("@")}>
+                    <PhoneField
                       value={draft.phone}
                       onChange={(v) => set("phone", v)}
+                      countryName={
+                        draft.regions.some((r) => r === "Import / outside Nigeria") &&
+                        draft.regions.length === 1
+                          ? undefined
+                          : "Nigeria"
+                      }
                       error={errors.phone}
-                      autoComplete="tel"
                     />
-                  </div>
-                  <TextArea
-                    label="Anything else we should know?"
-                    optional
-                    placeholder="Certifications, notable clients, exclusive distribution rights…"
-                    value={draft.notes}
-                    onChange={(v) => set("notes", v)}
-                    error={errors.notes}
-                    rows={3}
-                  />
+                  </Reveal>
+
+                  <Reveal show={draft.phone.replace(/\D/g, "").length >= 8}>
+                    <TextArea
+                      label="Anything else we should know?"
+                      optional
+                      placeholder="Certifications, notable clients, exclusive distribution rights…"
+                      value={draft.notes}
+                      onChange={(v) => set("notes", v)}
+                      error={errors.notes}
+                      rows={3}
+                    />
+                  </Reveal>
                 </>
               )}
 
@@ -455,6 +510,12 @@ export function VendorForm({
 }
 
 /* ------------------------------------------------------------------ */
+
+/** "Other" plus a typed answer beats storing the literal word "Other". */
+function resolvedRole(draft: Draft): string {
+  if (draft.role === "Other") return draft.roleOther.trim();
+  return draft.role;
+}
 
 function Row({ label, value }: { label: string; value: string }) {
   if (!value.trim()) return null;
@@ -531,7 +592,10 @@ function VendorReview({
       <Group title="Contact" onEdit={() => onEdit(3)}>
         <Row
           label="Name"
-          value={draft.contactName + (draft.role ? ` (${draft.role})` : "")}
+          value={
+            draft.contactName +
+            (resolvedRole(draft) ? ` (${resolvedRole(draft)})` : "")
+          }
         />
         <Row label="Email" value={draft.email} />
         <Row label="Phone" value={draft.phone} />

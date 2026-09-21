@@ -4,9 +4,9 @@ import {
   BUSINESS_AGE,
   FULFILMENT_SPEEDS,
   PAYMENT_TERMS,
-  REGIONS,
   URGENCIES,
 } from "./catalog";
+import { COVERAGE_AREAS } from "./geo";
 
 const urgencyValues = URGENCIES.map((u) => u.value) as [string, ...string[]];
 
@@ -35,7 +35,7 @@ const phone = z
  */
 const honeypot = z.string().max(200).optional();
 
-export const orderSchema = z.object({
+const orderObject = z.object({
   // Step 1 — the need
   need: trimmed(10, 2000, "Your request"),
   categories: z
@@ -43,18 +43,24 @@ export const orderSchema = z.object({
     .min(1, "Pick at least one category")
     .max(12, "That is a lot of categories — split into two requests"),
   quantity: optionalText(160),
+
+  // Do they have a purchase order or spreadsheet, and when is it coming?
+  hasAttachment: z.boolean({ message: "Let us know either way" }),
+  attachmentTiming: z.enum(["now", "later"]).optional().or(z.literal("")),
   attachmentNote: optionalText(400),
 
   // Step 2 — delivery and urgency
   urgency: z.enum(urgencyValues, { message: "Tell us how soon you need it" }),
+  hasDeadline: z.boolean({ message: "Let us know either way" }),
   neededBy: z
     .string()
     .trim()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Use the date picker")
     .optional()
     .or(z.literal("")),
-  city: trimmed(2, 80, "Delivery city"),
+  country: trimmed(2, 80, "Country"),
   region: trimmed(2, 80, "State or region"),
+  city: trimmed(2, 80, "Delivery city"),
   address: optionalText(300),
 
   // Step 3 — who you are
@@ -69,7 +75,49 @@ export const orderSchema = z.object({
   honeypot,
 });
 
+/**
+ * "Yes" answers have to be followed through: saying you have a purchase
+ * order means telling us when it is coming, and saying there is a hard
+ * deadline means giving us the date.
+ */
+export const orderSchema = orderObject
+  .refine((v) => !v.hasAttachment || Boolean(v.attachmentTiming), {
+    message: "Are you sending it now or later?",
+    path: ["attachmentTiming"],
+  })
+  .refine((v) => !v.hasDeadline || Boolean(v.neededBy), {
+    message: "Pick the date it has to be there by",
+    path: ["neededBy"],
+  });
+
 export type OrderInput = z.infer<typeof orderSchema>;
+
+/**
+ * The bare object, without the cross-field rules.
+ *
+ * Zod skips `.refine` checks when the base object fails, which is no use
+ * for validating one step at a time — the step you are on is usually the
+ * only part that is complete. The form parses against this and applies the
+ * conditional rules below itself.
+ */
+export const orderFields = orderObject;
+
+/** The "yes implies a follow-up answer" rules, checkable on their own. */
+export function conditionalOrderErrors(draft: {
+  hasAttachment?: boolean | null;
+  attachmentTiming?: string;
+  hasDeadline?: boolean | null;
+  neededBy?: string;
+}): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (draft.hasAttachment === true && !draft.attachmentTiming) {
+    out.attachmentTiming = "Are you sending it now or later?";
+  }
+  if (draft.hasDeadline === true && !draft.neededBy) {
+    out.neededBy = "Pick the date it has to be there by";
+  }
+  return out;
+}
 
 export const vendorSchema = z.object({
   // Step 1 — the company
@@ -91,9 +139,9 @@ export const vendorSchema = z.object({
 
   // Step 3 — coverage and terms
   regions: z
-    .array(z.enum(REGIONS))
+    .array(z.enum(COVERAGE_AREAS as [string, ...string[]]))
     .min(1, "Where can you deliver?")
-    .max(REGIONS.length),
+    .max(COVERAGE_AREAS.length),
   ownLogistics: z.boolean().optional(),
   paymentTerms: z.enum(PAYMENT_TERMS, { message: "Pick your payment terms" }),
   monthlyCapacity: optionalText(160),

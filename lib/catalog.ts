@@ -151,6 +151,12 @@ export const CATEGORIES: Category[] = [
 
 export const CATEGORY_NAMES = CATEGORIES.map((c) => c.name);
 
+/** Nothing on the list fits — we still want the request. */
+export const OTHER_CATEGORY = "Other / not listed";
+
+/** What the pickers actually offer. */
+export const CATEGORY_OPTIONS = [...CATEGORY_NAMES, OTHER_CATEGORY];
+
 export function categoryName(slug: string): string {
   return CATEGORIES.find((c) => c.slug === slug)?.name ?? slug;
 }
@@ -179,7 +185,7 @@ export const URGENCIES: Urgency[] = [
   {
     value: "same-day",
     label: "Today",
-    detail: "Emergency — we call you within the hour",
+    detail: "Emergency: we call within the hour",
     heat: 5,
   },
   {
@@ -236,19 +242,6 @@ export const BUDGET_BANDS = [
 /* Vendor-side options                                                 */
 /* ------------------------------------------------------------------ */
 
-export const REGIONS = [
-  "Lagos",
-  "Abuja (FCT)",
-  "Port Harcourt",
-  "Kano",
-  "Ibadan",
-  "Enugu",
-  "Kaduna",
-  "Benin City",
-  "Nationwide",
-  "Import / outside Nigeria",
-] as const;
-
 export const FULFILMENT_SPEEDS = [
   "Same or next day",
   "2–5 working days",
@@ -270,3 +263,33 @@ export const BUSINESS_AGE = [
   "3–10 years",
   "Over 10 years",
 ] as const;
+
+/** Who at the merchant we will actually be speaking to. */
+export const VENDOR_ROLES = [
+  "Owner / founder",
+  "Managing director",
+  "Sales lead",
+  "Sales representative",
+  "Business development",
+  "Operations manager",
+  "Procurement manager",
+  "Account manager",
+  "Customer service",
+  "Other",
+] as const;
+
+/** How a purchase order or spreadsheet reaches us. */
+export const ATTACHMENT_TIMING = [
+  {
+    value: "now",
+    label: "Send it now",
+    detail: "We reply within minutes with an address to send it to",
+  },
+  {
+    value: "later",
+    label: "Send it later",
+    detail: "We start sourcing from your description in the meantime",
+  },
+] as const;
+
+export type AttachmentTiming = (typeof ATTACHMENT_TIMING)[number]["value"];

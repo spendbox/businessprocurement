@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { orderSchema, makeReference, fieldErrors } from "@/lib/schemas";
-import { urgencyLabel, URGENCIES } from "@/lib/catalog";
+import { ATTACHMENT_TIMING, urgencyLabel, URGENCIES } from "@/lib/catalog";
 import { layout, rows, textVersion, type Row } from "@/lib/email";
 import { sendInternal, sendToCustomer, emailConfigured } from "@/lib/resend";
 import { saveRow, dbConfigured } from "@/lib/supabase";
@@ -57,19 +57,35 @@ export async function POST(request: Request) {
   const urgency = URGENCIES.find((u) => u.value === order.urgency);
   const submittedAt = new Date();
 
+  const timingLabel =
+    ATTACHMENT_TIMING.find((t) => t.value === order.attachmentTiming)?.label ?? "";
+
+  const attachmentSummary = order.hasAttachment
+    ? [
+        `Yes — ${timingLabel || "timing not given"}`,
+        order.attachmentNote ? `(${order.attachmentNote})` : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "No — working from the description alone";
+
+  const destination = [order.address, order.city, order.region, order.country]
+    .filter(Boolean)
+    .join(", ");
+
   const detailRows: Row[] = [
     { label: "What they need", value: order.need },
     { label: "Categories", value: order.categories.join(", ") },
     { label: "Quantity / spec", value: order.quantity },
     { label: "How soon", value: urgencyLabel(order.urgency) },
-    { label: "Needed by", value: order.neededBy },
     {
-      label: "Deliver to",
-      value: [order.address, order.city, order.region].filter(Boolean).join(", "),
+      label: "Hard deadline",
+      value: order.hasDeadline ? order.neededBy : "None given",
     },
+    { label: "Deliver to", value: destination },
     { label: "Budget", value: order.budget },
     { label: "Recurring need", value: order.recurring ? "Yes" : "" },
-    { label: "Attachments they mentioned", value: order.attachmentNote },
+    { label: "Purchase order / spreadsheet", value: attachmentSummary },
     { label: "Extra notes", value: order.notes },
     { label: "Business", value: order.company },
     { label: "Contact", value: `${order.contactName} · ${order.email} · ${order.phone}` },
@@ -84,9 +100,13 @@ export async function POST(request: Request) {
       need: order.need,
       categories: order.categories,
       quantity: order.quantity || null,
+      has_attachment: Boolean(order.hasAttachment),
+      attachment_timing: order.attachmentTiming || null,
       attachment_note: order.attachmentNote || null,
       urgency: order.urgency,
+      has_deadline: Boolean(order.hasDeadline),
       needed_by: order.neededBy || null,
+      country: order.country,
       city: order.city,
       region: order.region,
       address: order.address || null,
@@ -123,10 +143,11 @@ export async function POST(request: Request) {
     { label: "Categories", value: order.categories.join(", ") },
     { label: "Quantity / spec", value: order.quantity },
     { label: "How soon you need it", value: urgencyLabel(order.urgency) },
-    { label: "Needed by", value: order.neededBy },
+    { label: "Needed by", value: order.hasDeadline ? order.neededBy : "" },
+    { label: "Delivering to", value: destination },
     {
-      label: "Delivering to",
-      value: [order.address, order.city, order.region].filter(Boolean).join(", "),
+      label: "Purchase order",
+      value: order.hasAttachment ? attachmentSummary : "",
     },
     { label: "Budget you shared", value: order.budget },
     { label: "Your notes", value: order.notes },
@@ -143,7 +164,11 @@ export async function POST(request: Request) {
     preheader: `Request ${reference} received — ${promise}`,
     eyebrow: "Request received",
     heading: "We have your request",
-    intro: `Thanks ${order.contactName.split(" ")[0]}. ${promise}\n\nNothing else is needed from you right now — keep this email for your reference.`,
+    intro: `Thanks ${order.contactName.split(" ")[0]}. ${promise}\n\n${
+      order.hasAttachment && order.attachmentTiming === "now"
+        ? "You said you have a purchase order ready — reply to this email with the file attached and we will quote against it line by line."
+        : "Nothing else is needed from you right now — keep this email for your reference."
+    }`,
     reference,
     body: rows(customerRows),
     cta: { label: "Send another request", href: siteUrl() },

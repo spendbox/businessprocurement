@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { Check } from "./Icons";
 
 /* ------------------------------------------------------------------ */
@@ -382,5 +383,213 @@ export function Honeypot({
         onChange={(e) => onChange(e.target.value)}
       />
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Yes / no toggle                                                     */
+/* ------------------------------------------------------------------ */
+
+export function YesNo({
+  label,
+  hint,
+  value,
+  onChange,
+  yesLabel = "Yes",
+  noLabel = "No",
+  error,
+}: {
+  label: string;
+  hint?: string;
+  value: boolean | null;
+  onChange: (value: boolean) => void;
+  yesLabel?: string;
+  noLabel?: string;
+  error?: string;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2 border-0 p-0">
+      <legend className="text-[13px] font-bold text-ink-800">{label}</legend>
+      {hint && <p className="text-[13px] leading-snug text-ink-400">{hint}</p>}
+      <div className="mt-1 grid grid-cols-2 gap-2.5">
+        {[
+          { on: true, text: yesLabel },
+          { on: false, text: noLabel },
+        ].map((o) => {
+          const active = value === o.on;
+          return (
+            <button
+              key={o.text}
+              type="button"
+              onClick={() => onChange(o.on)}
+              aria-pressed={active}
+              className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border-[1.5px] px-4 text-[15px] font-bold transition-all duration-200 ${
+                active
+                  ? "border-forest-500 bg-forest-50 text-ink-900 shadow-[0_8px_22px_-14px_rgba(15,122,82,0.6)]"
+                  : "border-bone-200 bg-bone-50 text-ink-500 hover:border-forest-200 hover:bg-white"
+              }`}
+            >
+              <span
+                aria-hidden
+                className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-[1.5px] transition-colors ${
+                  active ? "border-forest-500 bg-forest-500" : "border-bone-300 bg-white"
+                }`}
+              >
+                {active && <Check className="h-3 w-3 text-white" />}
+              </span>
+              {o.text}
+            </button>
+          );
+        })}
+      </div>
+      {error && (
+        <p role="alert" className="text-[13px] font-semibold text-clay-400">
+          {error}
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Textarea with a live "how much have I written" meter                */
+/* ------------------------------------------------------------------ */
+
+export function CountedTextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+  error,
+  rows = 4,
+  autoFocus,
+  /** Words wanted before the field counts as answered. */
+  minWords,
+  /** Soft upper guide, shown once passed. */
+  idealWords,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  hint?: string;
+  error?: string;
+  rows?: number;
+  autoFocus?: boolean;
+  minWords: number;
+  idealWords?: number;
+}) {
+  const id = useId();
+  const words = value.trim() ? value.trim().split(/\s+/).length : 0;
+  const met = words >= minWords;
+  const remaining = Math.max(0, minWords - words);
+  const progress = Math.min(1, words / minWords);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <label htmlFor={id} className="text-[13px] font-bold text-ink-800">
+          {label}
+        </label>
+        <span
+          aria-hidden
+          className={`shrink-0 text-[12px] font-bold tabular-nums transition-colors ${
+            met ? "text-forest-500" : "text-ink-300"
+          }`}
+        >
+          {words} {words === 1 ? "word" : "words"}
+        </span>
+      </div>
+      {hint && <p className="-mt-1 text-[13px] leading-snug text-ink-400">{hint}</p>}
+
+      <textarea
+        id={id}
+        value={value}
+        rows={rows}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={`${id}-count`}
+        className={`${inputBase} resize-y leading-relaxed ${borderFor(error)}`}
+      />
+
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden
+          className="h-1 flex-1 overflow-hidden rounded-full bg-bone-200"
+        >
+          <span
+            className={`block h-full rounded-full transition-[width,background-color] duration-300 ${
+              met ? "bg-forest-500" : "bg-amber-400"
+            }`}
+            style={{ width: `${Math.round(progress * 100)}%` }}
+          />
+        </span>
+        <span
+          id={`${id}-count`}
+          aria-live="polite"
+          className={`shrink-0 text-[12.5px] font-semibold ${
+            met ? "text-forest-500" : "text-ink-400"
+          }`}
+        >
+          {met
+            ? idealWords && words > idealWords
+              ? "Plenty to work with"
+              : "That's enough detail"
+            : `${remaining} more ${remaining === 1 ? "word" : "words"} needed`}
+        </span>
+      </div>
+
+      {error && (
+        <p role="alert" className="text-[13px] font-semibold text-clay-400">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Progressive reveal                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Shows a field only once the one before it has been answered, so a step
+ * opens as a single question rather than a wall of inputs. Once revealed a
+ * field never hides again — going back and clearing something would
+ * otherwise make the form flicker.
+ */
+export function Reveal({
+  show,
+  children,
+}: {
+  show: boolean;
+  children: ReactNode;
+}) {
+  const [everShown, setEverShown] = useState(show);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    if (show) setEverShown(true);
+  }, [show]);
+
+  if (!everShown) return null;
+
+  return (
+    <motion.div
+      initial={reduced ? false : { opacity: 0, y: 14, height: 0 }}
+      animate={{ opacity: 1, y: 0, height: "auto" }}
+      transition={{
+        duration: 0.42,
+        ease: [0.22, 0.72, 0.18, 1],
+        height: { duration: 0.36 },
+      }}
+      style={{ overflow: "visible" }}
+      className="min-w-0"
+    >
+      {children}
+    </motion.div>
   );
 }

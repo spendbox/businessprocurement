@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { SESSION_COOKIE, readSession } from "@/lib/admin-auth";
+import { guardApi } from "@/lib/admin-guard";
 import { getRequest, rankedVendors, type VendorRow } from "@/lib/admin-data";
 import { getSupabase } from "@/lib/supabase";
 import { urgencyLabel } from "@/lib/catalog";
@@ -19,10 +18,8 @@ const siteUrl = () => process.env.NEXT_PUBLIC_SITE_URL ?? "https://spendbox.site
  * and contact details. Quotes come back to us, not straight to the buyer.
  */
 export async function POST(request: Request) {
-  const session = await readSession((await cookies()).get(SESSION_COOKIE)?.value);
-  if (!session) {
-    return NextResponse.json({ ok: false, message: "Not signed in." }, { status: 401 });
-  }
+  const guard = await guardApi("signed-in");
+  if (!guard.ok) return guard.response;
 
   if (!emailConfigured()) {
     return NextResponse.json(

@@ -1,3 +1,4 @@
+import { requireAdminPage } from "@/lib/admin-guard";
 import { Panel } from "../AdminUI";
 import { TestEmail } from "./DiagnosticsUI";
 
@@ -165,7 +166,9 @@ function Dot({ ok, required }: { ok: boolean; required: boolean }) {
   return <span aria-hidden className={`mt-[7px] h-2.5 w-2.5 shrink-0 rounded-full ${tone}`} />;
 }
 
-export default function DiagnosticsPage() {
+export default async function DiagnosticsPage() {
+  await requireAdminPage();
+
   const groups = buildChecks();
   const broken = groups
     .flatMap((g) => g.checks)

@@ -45,10 +45,10 @@ instead of also having them in a table.
 2. Open **SQL Editor** → **New query**.
 3. Open the file `supabase/schema.sql` in this project, copy everything in it,
    paste it in, and press **Run**. This creates the tables — requests,
-   merchant applications and invoices.
+   merchant applications, invoices and your team.
 
-   **If you already had a database before invoices and the archive existed,
-   run this same file again.** It is written to be safe on a database with
+   **If you already had a database before invoices, the archive or the team
+   existed, run this same file again.** It is written to be safe on a database with
    data in it: it only adds what is missing, and touches nothing that is
    already there. Until you do, the Invoices page will tell you so and the
    rest of the dashboard carries on working.
@@ -225,8 +225,11 @@ any password generator set to 32+ characters. It is not something you type — i
 just has to be long and random.
 
 To change who can sign in later, edit `ADMIN_EMAIL` / `ADMIN_PASSWORD` in Vercel
-and redeploy. There is no user list to manage and no password-reset email to
-build; everyone signed in is signed out the moment you change the secret.
+and redeploy. Everyone signed in is signed out the moment you change the secret.
+
+That account is **yours** and always an admin. Everybody else you add on the
+**Team** page, with their own email and password — see *Your team, and the
+two roles* below.
 
 **What you can do there:**
 
@@ -260,6 +263,12 @@ build; everyone signed in is signed out the moment you change the secret.
 - **Merchants** — every application, with search and filters, and a dropdown to
   move each between `pending → approved / rejected / paused`. Only *approved*
   merchants are ever offered as recipients.
+- **Add a merchant by hand.** For the supplier you already know, or one who
+  gave you their details on the phone: **Merchants → Add a merchant**. It asks
+  for what matching actually needs — who they are, what they supply, where they
+  deliver — and lets the rest (RC number, capacity, website) wait. They are
+  approved from the start unless you say otherwise, marked *added by hand* in
+  the list, and can be emailed to say they are set up if you tick the box.
 - **Approving one emails them.** The moment a merchant is set to `approved`
   they get a letter telling them they are on, what we have on file for them,
   and how quoting works. It goes out once, on the move *into* approved, so
@@ -277,11 +286,57 @@ build; everyone signed in is signed out the moment you change the secret.
   save as PDF* button, which is how you get a PDF on any machine. Each invoice
   moves through `draft → sent → paid / void`, and the page totals up what is
   still outstanding.
+- **Team** — the people who work with you, what each may do, and who looks
+  after which merchant.
 - **Diagnostics** — what this deployment can see, and a live test email. The
   first place to look when mail goes quiet.
 
 The dashboard reads from Supabase, so it needs Supabase configured. Without it
 the pages explain what is missing rather than erroring.
+
+---
+
+## Your team, and the two roles
+
+Everything here is on the **Team** page in the dashboard.
+
+**Adding someone.** Name, email, role, and — if they need to sign in — a
+password of at least ten characters. Give them the password there and then:
+it is hashed the moment it is saved and can never be read back, only replaced.
+They then sign in at `/admin/login` with their own email.
+
+Someone **without** a password is still worth adding. They are a name you can
+hand merchants to, which is the point of the next part.
+
+**The two roles:**
+
+| | Admin | Coordinator |
+|---|---|---|
+| Requests, and sending them to merchants | yes | **yes** |
+| The overview, the charts, the numbers | yes | no |
+| Merchants, adding and approving them | yes | no |
+| Invoices and totals | yes | no |
+| The team, and diagnostics | yes | no |
+
+A **coordinator** is the sub-admin: they work the orders and get them out to
+merchants for quoting, and they see no figures about the business at all. This
+is not a matter of hidden links. The middleware turns their request away before
+the page runs, every page checks again, and every route that could change or
+reveal something refuses them — so typing the address in by hand gets them
+nothing but their own request list.
+
+**Who looks after which merchant.** Every merchant row has a *Looked after by*
+dropdown; pick a team member and it saves straight away. The Team page shows
+how many merchants each person carries. Removing someone leaves their
+merchants in place and simply unassigns them.
+
+**Switching someone off** keeps the person and their history but refuses their
+sign-in, which is what you want when somebody leaves or goes on leave.
+*Take away their sign-in* does the same to the password alone. You cannot
+delete the account you are currently signed in with.
+
+**If you get locked out**, your own `ADMIN_EMAIL` / `ADMIN_PASSWORD` in Vercel
+is checked before this table and is not affected by anything on the Team page.
 
 ---
 
@@ -381,9 +436,10 @@ app/
   api/vendor/route.ts receives vendor applications, saves and emails them
   api/classify/route.ts suggests categories from what the buyer typed
   admin/             the dashboard (sign-in, overview, requests, merchants,
-                     invoices)
+                     invoices, team)
   api/admin/         sign in and out, change a status, email merchants,
-                     delete a merchant, raise and send invoices
+                     add and delete merchants, raise and send invoices,
+                     manage the team
 
 components/
   Shell.tsx        holds the "which form is open" state for the whole page
@@ -409,6 +465,9 @@ lib/
   supabase.ts    saving
   admin-auth.ts  the dashboard login
   admin-data.ts  the dashboard's database queries
+  roles.ts       the two roles and what each may open
+  team.ts        your team, their passwords and who owns which merchant
+  admin-guard.ts one place that answers "may this person do that?"
   invoices.ts    invoice maths, validation and the printable document
   attachments.ts what may be attached, and how big it may be
   ratelimit.ts   stops one person spamming the form

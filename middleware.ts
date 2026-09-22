@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, readSession } from "@/lib/admin-auth";
+import { SESSION_COOKIE, isAdmin, readSession } from "@/lib/admin-auth";
+import { COORDINATOR_HOME, coordinatorMayVisit } from "@/lib/roles";
 import { PORTAL_COOKIE, readPortalSession } from "@/lib/portal-auth";
 import { portalEnabled } from "@/lib/features";
 
@@ -43,7 +44,7 @@ export async function middleware(request: NextRequest) {
 
   if (pathname === "/admin/login") {
     if (session) {
-      return redirectTo(request, "/admin");
+      return redirectTo(request, isAdmin(session) ? "/admin" : COORDINATOR_HOME);
     }
     return NextResponse.next();
   }
@@ -51,6 +52,15 @@ export async function middleware(request: NextRequest) {
   if (!session) {
     const next = pathname !== "/admin" ? `?next=${encodeURIComponent(pathname)}` : "";
     return redirectTo(request, `/admin/login${next}`);
+  }
+
+  /*
+   * A coordinator works requests and nothing else. Typing a URL is not a way
+   * round that — the pages check again, but turning it away here means the
+   * page never runs and no query behind it is ever made.
+   */
+  if (!isAdmin(session) && !coordinatorMayVisit(pathname)) {
+    return redirectTo(request, COORDINATOR_HOME);
   }
 
   return NextResponse.next();

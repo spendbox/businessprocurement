@@ -29,7 +29,9 @@ function Form({ problem }: { problem: string | null }) {
         setError(data?.message ?? "Could not sign you in.");
         return;
       }
-      router.replace(next && next.startsWith("/admin") ? next : "/admin");
+      /* A coordinator has no overview to land on, so the server says where. */
+      const home = typeof data.home === "string" ? data.home : "/admin";
+      router.replace(next && next.startsWith("/admin") ? next : home);
       router.refresh();
     } catch {
       setError("Could not reach the server.");
@@ -48,7 +50,8 @@ function Form({ problem }: { problem: string | null }) {
         Dashboard
       </h1>
       <p className="mt-1.5 text-[14px] leading-relaxed text-ink-400">
-        Sign in to see requests, merchants and what is coming in.
+        Sign in with your own email — the owner account, or the one an admin
+        set up for you.
       </p>
 
       {problem ? (

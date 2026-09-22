@@ -238,6 +238,92 @@ export function DeleteVendor({
 }
 
 /* ------------------------------------------------------------------ */
+/* Who looks after a merchant                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Hands a merchant to someone on the team.
+ *
+ * Saved the moment it changes — an assignment is not a form worth having a
+ * Save button for, and the row already shows what it is now set to.
+ */
+export function AssignOwner({
+  vendorId,
+  value,
+  team,
+}: {
+  vendorId: string;
+  value: string;
+  team: { id: string; name: string }[];
+}) {
+  const router = useRouter();
+  const [current, setCurrent] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (team.length === 0) {
+    return (
+      <span className="text-[12.5px] text-ink-300">
+        No team yet — add people on the Team page to hand merchants out.
+      </span>
+    );
+  }
+
+  const change = async (next: string) => {
+    const previous = current;
+    setCurrent(next);
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/vendors", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: vendorId, assignedTo: next || null }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) {
+        setCurrent(previous);
+        setError(data?.message ?? "Could not save that.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setCurrent(previous);
+      setError("Could not reach the server.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="text-[12px] font-bold uppercase tracking-[0.07em] text-ink-300">
+        Looked after by
+      </span>
+      <select
+        value={current}
+        disabled={saving}
+        onChange={(e) => change(e.target.value)}
+        aria-label="Who looks after this merchant"
+        className="min-h-[38px] rounded-lg border-[1.5px] border-bone-200 bg-white px-2.5 text-[13px] font-semibold text-ink-800 outline-none transition-colors focus:border-forest-500 disabled:opacity-60"
+      >
+        <option value="">Nobody</option>
+        {team.map((member) => (
+          <option key={member.id} value={member.id}>
+            {member.name}
+          </option>
+        ))}
+      </select>
+      {error && (
+        <span role="alert" className="text-[12px] font-semibold text-clay-400">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Send to merchants                                                   */
 /* ------------------------------------------------------------------ */
 

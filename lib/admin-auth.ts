@@ -1,10 +1,11 @@
 /**
  * Admin sign-in.
  *
- * The credentials live in environment variables, so changing who can get in
- * is a Vercel settings change and a redeploy — no user table, no password
- * reset flow, no extra service to run. That is the right trade for a
- * single-operator back office.
+ * The owner's credentials live in environment variables, so the way back in
+ * is always a Vercel settings change — no user table to get locked out of.
+ * Everyone else is a row in `team_members` with a hashed password, added
+ * from the dashboard, and carries a role: an admin sees everything, a
+ * coordinator sees requests and no statistics.
  *
  * The session is a cookie carrying a payload and an HMAC of that payload.
  * Nothing is stored server-side, and the cookie cannot be forged without
@@ -13,11 +14,31 @@
  */
 
 import { cookieOptions, secret, sign, verify } from "./signing";
+import type { Role } from "./roles";
 
 export const SESSION_COOKIE = "spendbox_admin";
 const SESSION_DAYS = 7;
 
-export type AdminSession = { email: string; exp: number };
+export type AdminSession = {
+  email: string;
+  /** Missing on a cookie issued before roles existed — treated as admin. */
+  role?: Role;
+  name?: string;
+  /** The team_members row, when this is not the owner account. */
+  memberId?: string;
+  exp: number;
+};
+
+/** The owner account, and anyone given the admin role. */
+export const isAdmin = (session: AdminSession | null): boolean =>
+  Boolean(session) && (session!.role ?? "admin") === "admin";
+
+export const roleOf = (session: AdminSession | null): Role =>
+  (session?.role ?? "admin") as Role;
+
+/** What to call the person in the corner of the dashboard. */
+export const displayName = (session: AdminSession | null): string =>
+  session?.name?.trim() || session?.email || "";
 
 /** Compare without leaking how much of the value matched. */
 export function safeEqual(a: string, b: string): boolean {
@@ -53,14 +74,24 @@ export function adminSetupProblem(): string | null {
   return null;
 }
 
-export async function createSession(email: string): Promise<string | null> {
-  return sign("admin-session", { email }, SESSION_DAYS * 24 * 60 * 60 * 1000);
+export async function createSession(
+  email: string,
+  extra: { role?: Role; name?: string; memberId?: string } = {},
+): Promise<string | null> {
+  return sign(
+    "admin-session",
+    { email, role: extra.role ?? "admin", name: extra.name, memberId: extra.memberId },
+    SESSION_DAYS * 24 * 60 * 60 * 1000,
+  );
 }
 
 export async function readSession(
   token: string | undefined,
 ): Promise<AdminSession | null> {
-  return verify<{ email: string }>("admin-session", token);
+  return verify<{ email: string; role?: Role; name?: string; memberId?: string }>(
+    "admin-session",
+    token,
+  );
 }
 
 /** Checks a sign-in attempt against the configured credentials. */

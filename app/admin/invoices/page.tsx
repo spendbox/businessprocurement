@@ -11,6 +11,7 @@ import {
   prettyDate,
   type InvoiceRow,
 } from "@/lib/invoices";
+import { requireAdminPage } from "@/lib/admin-guard";
 import { Filters } from "../Filters";
 import { Panel, StatusChip, StatusSelect } from "../AdminUI";
 import { InvoiceActions, InvoiceBuilder } from "../InvoiceUI";
@@ -36,6 +37,8 @@ export default async function InvoicesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireAdminPage();
+
   const params = await searchParams;
   const one = (key: string) => {
     const value = params[key];

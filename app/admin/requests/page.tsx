@@ -7,6 +7,7 @@ import {
   type ArchiveView,
 } from "@/lib/admin-data";
 import { CATEGORY_OPTIONS, URGENCIES } from "@/lib/catalog";
+import { requirePage } from "@/lib/admin-guard";
 import { Filters } from "../Filters";
 import { StatusChip, UrgencyChip } from "../AdminUI";
 import { NeedsDatabase } from "../Empty";
@@ -28,6 +29,8 @@ export default async function RequestsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requirePage();
+
   const params = await searchParams;
   const one = (key: string) => {
     const value = params[key];

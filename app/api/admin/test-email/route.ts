@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { SESSION_COOKIE, readSession } from "@/lib/admin-auth";
+import { guardApi } from "@/lib/admin-guard";
 import { Resend } from "resend";
 
 export const runtime = "nodejs";
@@ -14,10 +13,8 @@ export const runtime = "nodejs";
  * bad key — is handed over verbatim, because the whole point is to see it.
  */
 export async function POST(request: Request) {
-  const session = await readSession((await cookies()).get(SESSION_COOKIE)?.value);
-  if (!session) {
-    return NextResponse.json({ ok: false, message: "Not signed in." }, { status: 401 });
-  }
+  const guard = await guardApi("admin");
+  if (!guard.ok) return guard.response;
 
   let to = "";
   try {

@@ -363,7 +363,16 @@ export function CheckboxField({
   );
 }
 
-/** Off-screen input that only bots fill in. */
+/**
+ * Bot trap.
+ *
+ * This used to be named "company-url" with a visible-to-AT label reading
+ * "Leave this empty", which browser autofill and password managers happily
+ * filled in — and a filled trap silently binned the submission. It is now
+ * named something no autofill heuristic recognises, hidden from assistive
+ * tech, and kept out of the tab order. The server treats a hit as a flag to
+ * look at, never as grounds to drop a request.
+ */
 export function Honeypot({
   value,
   onChange,
@@ -372,13 +381,16 @@ export function Honeypot({
   onChange: (v: string) => void;
 }) {
   return (
-    <div aria-hidden className="absolute -left-[9999px] h-px w-px overflow-hidden">
-      <label htmlFor="company-url-hp">Leave this empty</label>
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute -left-[9999px] top-0 h-px w-px overflow-hidden opacity-0"
+    >
       <input
-        id="company-url-hp"
-        name="company-url"
+        type="text"
+        name="sb-field-9f"
         tabIndex={-1}
         autoComplete="off"
+        aria-hidden="true"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -386,8 +398,6 @@ export function Honeypot({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Yes / no toggle                                                     */
 /* ------------------------------------------------------------------ */
 
 export function YesNo({

@@ -103,6 +103,7 @@ export function VendorForm({
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
+  const [confirmationSent, setConfirmationSent] = useState(true);
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -174,6 +175,7 @@ export function VendorForm({
         );
         return;
       }
+      setConfirmationSent(data.confirmationSent !== false);
       setReference(data.reference as string);
     } catch {
       setFormError(
@@ -254,6 +256,7 @@ export function VendorForm({
           reference={reference!}
           email={draft.email}
           kind="application"
+          confirmationSent={confirmationSent}
         />
       ) : (
         <div className="relative">

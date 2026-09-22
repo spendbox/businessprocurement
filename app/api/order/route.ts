@@ -48,9 +48,23 @@ export async function POST(request: Request) {
 
   const order = parsed.data;
 
-  // Honeypot filled means a bot. Answer as if it worked and drop it.
-  if (order.honeypot) {
-    return NextResponse.json({ ok: true, reference: makeReference("SPB") });
+  /*
+   * The bot trap is a FLAG, not a bin.
+   *
+   * It used to return a fake success and drop the submission, which meant a
+   * browser autofilling the hidden field made a real request vanish with no
+   * email, no database row and no log line anywhere. Losing one genuine
+   * order costs far more than processing one spam one, so a hit is now
+   * recorded, shouted about in the log, and marked in the internal email.
+   */
+  const flagged = Boolean(order.honeypot);
+  if (flagged) {
+    console.warn("[spendbox] bot trap tripped — processing anyway", {
+      kind: "order",
+      company: order.company,
+      email: order.email,
+      value: order.honeypot?.slice(0, 40),
+    });
   }
 
   const reference = makeReference("SPB");
@@ -195,9 +209,9 @@ export async function POST(request: Request) {
 
   const [internalResult, customerResult] = await Promise.all([
     sendInternal({
-      subject: `[${urgency?.label ?? "New"}] ${order.company} · ${order.categories
-        .slice(0, 2)
-        .join(", ")} · ${reference}`,
+      subject: `${flagged ? "[?spam] " : ""}[${
+        urgency?.label ?? "New"
+      }] ${order.company} · ${order.categories.slice(0, 2).join(", ")} · ${reference}`,
       html: internalHtml,
       text: textVersion("New procurement request", reference, detailRows),
       replyTo: order.email,
@@ -210,17 +224,57 @@ export async function POST(request: Request) {
     }),
   ]);
 
+  const savedToDb = dbConfigured() && !dbError;
+
   if (!internalResult.ok) {
-    console.error("[order] internal email failed", reference, internalResult.error);
+    console.error("[spendbox] internal email FAILED", {
+      reference,
+      error: internalResult.error,
+      from: process.env.EMAIL_FROM ?? "(EMAIL_FROM unset)",
+      to: process.env.EMAIL_TO_INTERNAL ?? "(EMAIL_TO_INTERNAL unset)",
+    });
   }
   if (!customerResult.ok) {
-    console.error("[order] customer email failed", reference, customerResult.error);
+    console.error("[spendbox] confirmation email FAILED", {
+      reference,
+      to: order.email,
+      error: customerResult.error,
+      from: process.env.EMAIL_FROM ?? "(EMAIL_FROM unset)",
+    });
+  }
+  if (internalResult.ok && customerResult.ok) {
+    console.log("[spendbox] request delivered", { reference, company: order.company });
+  }
+
+  /*
+   * If nothing worked — no email to us, and no database row — then the
+   * request exists nowhere and it would be a lie to show a success screen.
+   * Tell them, and give them the error so it can actually be fixed.
+   */
+  if (!internalResult.ok && !savedToDb) {
+    console.error("[spendbox] request LOST — nothing stored, nothing sent", {
+      reference,
+      company: order.company,
+      email: order.email,
+      emailError: internalResult.error,
+      dbError,
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "We could not record your request just now. Nothing has been lost on your side — please email us directly and we will pick it up.",
+        detail: internalResult.error,
+      },
+      { status: 502 },
+    );
   }
 
   return NextResponse.json({
     ok: true,
     reference,
     confirmationSent: customerResult.ok,
+    confirmationError: customerResult.ok ? undefined : customerResult.error,
     urgency: order.urgency,
   });
 }

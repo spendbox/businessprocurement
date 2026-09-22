@@ -122,6 +122,7 @@ export function OrderForm({
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
+  const [confirmationSent, setConfirmationSent] = useState(true);
 
   /* Category suggestion state */
   const [suggesting, setSuggesting] = useState(false);
@@ -261,6 +262,7 @@ export function OrderForm({
         );
         return;
       }
+      setConfirmationSent(data.confirmationSent !== false);
       setReference(data.reference as string);
     } catch {
       setFormError("We could not reach the server. Check your connection and try again.");
@@ -335,7 +337,12 @@ export function OrderForm({
       <Honeypot value={draft.honeypot} onChange={(v) => set("honeypot", v)} />
 
       {done ? (
-        <Success reference={reference!} email={draft.email} urgency={draft.urgency} />
+        <Success
+          reference={reference!}
+          email={draft.email}
+          urgency={draft.urgency}
+          confirmationSent={confirmationSent}
+        />
       ) : (
         <div className="relative">
           <AnimatePresence mode="wait" initial={false} custom={direction}>
@@ -763,11 +770,14 @@ export function Success({
   email,
   urgency,
   kind = "request",
+  confirmationSent = true,
 }: {
   reference: string;
   email: string;
   urgency?: string;
   kind?: "request" | "application";
+  /** False when the confirmation email could not be sent. */
+  confirmationSent?: boolean;
 }) {
   const promise =
     kind === "application"
@@ -807,11 +817,21 @@ export function Success({
         </p>
       </div>
 
-      <p className="max-w-[42ch] text-[13.5px] leading-relaxed text-ink-400">
-        A confirmation is on its way to{" "}
-        <span className="font-semibold text-ink-700">{email}</span>. If it has not
-        landed in a few minutes, check your spam folder.
-      </p>
+      {confirmationSent ? (
+        <p className="max-w-[42ch] text-[13.5px] leading-relaxed text-ink-400">
+          A confirmation is on its way to{" "}
+          <span className="font-semibold text-ink-700">{email}</span>. If it has
+          not landed in a few minutes, check your spam folder.
+        </p>
+      ) : (
+        /* Never promise an email that did not send. */
+        <p className="max-w-[44ch] rounded-xl border-[1.5px] border-amber-400/40 bg-amber-400/10 px-4 py-3 text-[13.5px] leading-relaxed text-ink-700">
+          We have your {kind === "application" ? "application" : "request"} and our
+          team has been notified, but the confirmation email to{" "}
+          <span className="font-semibold">{email}</span> did not go through. Keep
+          the reference above — it is all we need to find you.
+        </p>
+      )}
     </div>
   );
 }

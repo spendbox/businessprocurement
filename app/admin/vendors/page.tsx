@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { DataUnavailable, VENDOR_STATUSES, listVendors } from "@/lib/admin-data";
 import { CATEGORY_OPTIONS } from "@/lib/catalog";
 import { Filters } from "../Filters";
-import { StatusSelect } from "../AdminUI";
+import { DeleteVendor, StatusSelect } from "../AdminUI";
 import { NeedsDatabase } from "../Empty";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +48,7 @@ export default async function VendorsPage({
         <p className="mt-1 text-[14.5px] text-ink-400">
           {vendors.length} shown
           {pending > 0 && ` · ${pending} waiting on a decision`}
+          {" · approving one emails them straight away"}
         </p>
       </div>
 
@@ -94,12 +95,15 @@ export default async function VendorsPage({
                     · {v.phone}
                   </p>
                 </div>
-                <StatusSelect
-                  kind="vendor"
-                  id={v.id}
-                  value={v.status}
-                  options={VENDOR_STATUSES}
-                />
+                <div className="flex shrink-0 flex-wrap items-start justify-end gap-2">
+                  <StatusSelect
+                    kind="vendor"
+                    id={v.id}
+                    value={v.status}
+                    options={VENDOR_STATUSES}
+                  />
+                  <DeleteVendor id={v.id} company={v.company} />
+                </div>
               </div>
 
               <p className="mt-3 max-w-[80ch] text-[14px] leading-relaxed text-ink-600">

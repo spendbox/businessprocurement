@@ -18,6 +18,10 @@ const STATUS_TONE: Record<string, string> = {
   approved: "bg-forest-500 text-white border-forest-500",
   rejected: "bg-clay-400/15 text-clay-400 border-clay-400/40",
   paused: "bg-bone-200 text-ink-400 border-bone-300",
+  draft: "bg-bone-200 text-ink-500 border-bone-300",
+  sent: "bg-forest-50 text-forest-700 border-forest-200",
+  paid: "bg-forest-500 text-white border-forest-500",
+  void: "bg-clay-400/15 text-clay-400 border-clay-400/40",
 };
 
 export function StatusChip({ status }: { status: string }) {
@@ -64,7 +68,7 @@ export function StatusSelect({
   value,
   options,
 }: {
-  kind: "request" | "vendor";
+  kind: "request" | "vendor" | "invoice";
   id: string;
   value: string;
   options: readonly string[];
@@ -73,12 +77,15 @@ export function StatusSelect({
   const [saving, setSaving] = useState(false);
   const [current, setCurrent] = useState(value);
   const [error, setError] = useState<string | null>(null);
+  /* What the change set off — an approval email, a trip to the archive. */
+  const [note, setNote] = useState<string | null>(null);
 
   const change = async (next: string) => {
     const previous = current;
     setCurrent(next);
     setSaving(true);
     setError(null);
+    setNote(null);
     try {
       const response = await fetch("/api/admin/status", {
         method: "POST",
@@ -90,6 +97,11 @@ export function StatusSelect({
         setCurrent(previous);
         setError(data?.message ?? "Could not save that.");
         return;
+      }
+      if (typeof data.message === "string" && data.message) {
+        /* An email that failed is reported as a problem, not a success. */
+        if (data.emailed === false) setError(data.message);
+        else setNote(data.message);
       }
       router.refresh();
     } catch {
@@ -115,7 +127,112 @@ export function StatusSelect({
           </option>
         ))}
       </select>
-      {error && <span className="text-[12px] font-semibold text-clay-400">{error}</span>}
+      {error && (
+        <span role="alert" className="max-w-[34ch] text-[12px] font-semibold text-clay-400">
+          {error}
+        </span>
+      )}
+      {note && !error && (
+        <span role="status" className="max-w-[34ch] text-[12px] font-semibold text-forest-600">
+          {note}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Deleting a merchant                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Two clicks, never one.
+ *
+ * Deleting a merchant cannot be undone, so the button turns into a plain
+ * question first. The dangerous action is the one that needs the deliberate
+ * second press, and it says what will disappear.
+ */
+export function DeleteVendor({
+  id,
+  company,
+}: {
+  id: string;
+  company: string;
+}) {
+  const router = useRouter();
+  const [asking, setAsking] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const remove = async () => {
+    setWorking(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/vendors", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) {
+        setError(data?.message ?? "Could not delete that merchant.");
+        setWorking(false);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Could not reach the server.");
+      setWorking(false);
+    }
+  };
+
+  if (!asking) {
+    return (
+      <span className="inline-flex flex-col items-end gap-1">
+        <button
+          type="button"
+          onClick={() => setAsking(true)}
+          className="inline-flex min-h-[40px] items-center rounded-full border-[1.5px] border-bone-300 px-3.5 text-[13px] font-bold text-ink-400 transition-colors hover:border-clay-400/60 hover:bg-clay-400/10 hover:text-clay-400"
+        >
+          Delete
+        </button>
+        {error && (
+          <span role="alert" className="text-[12px] font-semibold text-clay-400">
+            {error}
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex flex-col items-end gap-1.5 rounded-xl border-[1.5px] border-clay-400/40 bg-clay-400/8 px-3 py-2.5">
+      <span className="text-[13px] font-semibold leading-snug text-ink-700">
+        Delete {company} for good?
+      </span>
+      <span className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={remove}
+          disabled={working}
+          className="inline-flex min-h-[38px] items-center rounded-full bg-clay-400 px-3.5 text-[13px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {working ? "Deleting…" : "Yes, delete"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setAsking(false)}
+          disabled={working}
+          className="inline-flex min-h-[38px] items-center rounded-full px-3 text-[13px] font-bold text-ink-500 transition-colors hover:text-ink-900"
+        >
+          Keep
+        </button>
+      </span>
+      {error && (
+        <span role="alert" className="text-[12px] font-semibold text-clay-400">
+          {error}
+        </span>
+      )}
     </span>
   );
 }

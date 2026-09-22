@@ -162,3 +162,77 @@ end $$;
 -- ------------------------------------------------------------
 alter table public.procurement_requests
   alter column city drop not null;
+
+-- ------------------------------------------------------------
+-- Archiving cancelled requests
+--
+-- A cancelled request is not deleted — it is filed away. The
+-- dashboard hides archived rows unless you ask for them, so the
+-- working list only shows live work. Safe to run twice.
+-- ------------------------------------------------------------
+alter table public.procurement_requests
+  add column if not exists archived_at timestamptz;
+
+create index if not exists procurement_requests_archived_at_idx
+  on public.procurement_requests (archived_at);
+
+-- Anything already cancelled belongs in the archive.
+update public.procurement_requests
+   set archived_at = coalesce(archived_at, now())
+ where status = 'cancelled'
+   and archived_at is null;
+
+-- ------------------------------------------------------------
+-- Invoices
+--
+-- Raised in the dashboard against a request (or on their own),
+-- emailed to the business, and downloadable as a document.
+-- Money is stored in the smallest sensible unit for the currency
+-- as a numeric, never a float.
+-- ------------------------------------------------------------
+create table if not exists public.invoices (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+
+  reference         text not null unique,
+
+  -- what it is for
+  request_id        uuid references public.procurement_requests (id) on delete set null,
+  request_reference text,
+
+  -- who it goes to
+  bill_to_company   text not null,
+  bill_to_name      text,
+  bill_to_email     text not null,
+  bill_to_address   text,
+
+  -- the money
+  currency          text not null default 'NGN',
+  items             jsonb not null default '[]'::jsonb,
+  subtotal          numeric(14,2) not null default 0,
+  tax_rate          numeric(6,3) not null default 0,
+  tax_amount        numeric(14,2) not null default 0,
+  delivery          numeric(14,2) not null default 0,
+  total             numeric(14,2) not null default 0,
+
+  -- terms
+  issue_date        date not null default current_date,
+  due_date          date,
+  notes             text,
+
+  status            text not null default 'draft'
+                      check (status in ('draft','sent','paid','void')),
+  sent_at           timestamptz,
+  paid_at           timestamptz
+);
+
+create index if not exists invoices_created_at_idx
+  on public.invoices (created_at desc);
+create index if not exists invoices_request_id_idx
+  on public.invoices (request_id);
+create index if not exists invoices_status_idx
+  on public.invoices (status);
+create index if not exists invoices_bill_to_email_idx
+  on public.invoices (bill_to_email);
+
+alter table public.invoices enable row level security;

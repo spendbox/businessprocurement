@@ -1,5 +1,6 @@
 import { getSupabase } from "./supabase";
 import { CATEGORIES, URGENCIES } from "./catalog";
+import type { InvoiceRow } from "./invoices";
 
 /** Rows as the dashboard reads them. */
 export type RequestRow = {
@@ -28,6 +29,8 @@ export type RequestRow = {
   notes: string | null;
   status: string;
   internal_notes: string | null;
+  /** Set when the request was filed away; null while it is live work. */
+  archived_at: string | null;
 };
 
 export type VendorRow = {
@@ -78,18 +81,39 @@ function db() {
   return client;
 }
 
+/**
+ * Which side of the archive to look at. "active" is the working list and
+ * the default everywhere — a cancelled request is filed away, not deleted,
+ * so it stays available under "archived".
+ */
+export type ArchiveView = "active" | "archived" | "all";
+
+/**
+ * True when the database has not had the archiving migration run against
+ * it yet. The dashboard keeps working in that case rather than showing an
+ * error about a column nobody has heard of.
+ */
+const missingArchiveColumn = (message: string) =>
+  /archived_at/.test(message) && /column|schema cache/i.test(message);
+
 export async function listRequests(options: {
   status?: string;
   urgency?: string;
   category?: string;
   search?: string;
+  archive?: ArchiveView;
   limit?: number;
 }): Promise<RequestRow[]> {
+  const archive = options.archive ?? "active";
+
   let query = db()
     .from("procurement_requests")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(options.limit ?? 200);
+
+  if (archive === "active") query = query.is("archived_at", null);
+  if (archive === "archived") query = query.not("archived_at", "is", null);
 
   if (options.status) query = query.eq("status", options.status);
   if (options.urgency) query = query.eq("urgency", options.urgency);
@@ -108,6 +132,36 @@ export async function listRequests(options: {
       );
     }
   }
+
+  const { data, error } = await query;
+  if (error) {
+    /* An un-migrated database has no archive; show everything instead. */
+    if (missingArchiveColumn(error.message)) {
+      if (archive === "archived") return [];
+      return listRequestsWithoutArchive(options);
+    }
+    throw new DataUnavailable(error.message);
+  }
+  return (data ?? []) as RequestRow[];
+}
+
+/** The same query with no archive filter, for a database missing the column. */
+async function listRequestsWithoutArchive(options: {
+  status?: string;
+  urgency?: string;
+  category?: string;
+  search?: string;
+  limit?: number;
+}): Promise<RequestRow[]> {
+  let query = db()
+    .from("procurement_requests")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(options.limit ?? 200);
+
+  if (options.status) query = query.eq("status", options.status);
+  if (options.urgency) query = query.eq("urgency", options.urgency);
+  if (options.category) query = query.contains("categories", [options.category]);
 
   const { data, error } = await query;
   if (error) throw new DataUnavailable(error.message);
@@ -284,6 +338,8 @@ export type Stats = {
   byCategory: { label: string; value: number }[];
   daily: { date: string; value: number }[];
   uncoveredCategories: string[];
+  /** Cancelled work, filed away and out of the working list. */
+  archivedRequests: number;
 };
 
 const DAYS = 14;
@@ -291,23 +347,34 @@ const DAYS = 14;
 export async function getStats(): Promise<Stats> {
   const client = db();
 
-  const [requestsResult, vendorsResult] = await Promise.all([
+  const requestColumns = "created_at,status,urgency,categories,archived_at";
+
+  const loadRequests = (columns: string) =>
     client
       .from("procurement_requests")
-      .select("created_at,status,urgency,categories")
+      .select(columns)
       .order("created_at", { ascending: false })
-      .limit(5000),
+      .limit(5000);
+
+  let [requestsResult, vendorsResult] = await Promise.all([
+    loadRequests(requestColumns),
     client.from("vendor_applications").select("status,categories").limit(5000),
   ]);
+
+  /* A database without the archiving migration still gets its numbers. */
+  if (requestsResult.error && missingArchiveColumn(requestsResult.error.message)) {
+    requestsResult = await loadRequests("created_at,status,urgency,categories");
+  }
 
   if (requestsResult.error) throw new DataUnavailable(requestsResult.error.message);
   if (vendorsResult.error) throw new DataUnavailable(vendorsResult.error.message);
 
-  const requests = (requestsResult.data ?? []) as {
+  const requests = (requestsResult.data ?? []) as unknown as {
     created_at: string;
     status: string;
     urgency: string;
     categories: string[];
+    archived_at?: string | null;
   }[];
   const vendors = (vendorsResult.data ?? []) as {
     status: string;
@@ -379,5 +446,107 @@ export async function getStats(): Promise<Stats> {
       .slice(0, 12),
     daily,
     uncoveredCategories,
+    archivedRequests: requests.filter((r) => Boolean(r.archived_at)).length,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Merchants — removing one for good                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Deletes a merchant application outright.
+ *
+ * Used for duplicates, test rows and companies that asked to be taken off.
+ * Nothing references a merchant after the fact — quotes go out by email —
+ * so there is no orphan to worry about, and a real removal is what
+ * "delete this merchant" is expected to mean.
+ */
+export async function deleteVendor(
+  id: string,
+): Promise<{ ok: boolean; company?: string; error?: string }> {
+  const client = getSupabase();
+  if (!client) return { ok: false, error: "Supabase is not configured." };
+
+  const { data: existing, error: findError } = await client
+    .from("vendor_applications")
+    .select("company")
+    .eq("id", id)
+    .maybeSingle();
+  if (findError) return { ok: false, error: findError.message };
+  if (!existing) return { ok: false, error: "That merchant is already gone." };
+
+  const { error } = await client.from("vendor_applications").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, company: (existing as { company: string }).company };
+}
+
+/* ------------------------------------------------------------------ */
+/* Invoices                                                            */
+/* ------------------------------------------------------------------ */
+
+/** Thrown when the invoices table has not been created yet. */
+export class InvoicesUnavailable extends DataUnavailable {}
+
+const missingInvoicesTable = (message: string) =>
+  /invoices/.test(message) &&
+  /(does not exist|schema cache|relation)/i.test(message);
+
+const invoiceTrouble = (message: string) =>
+  missingInvoicesTable(message)
+    ? new InvoicesUnavailable(
+        "The invoices table is not in the database yet. Run supabase/schema.sql in the Supabase SQL editor and this page will fill itself in.",
+      )
+    : new DataUnavailable(message);
+
+export async function listInvoices(options: {
+  status?: string;
+  requestId?: string;
+  search?: string;
+  limit?: number;
+} = {}): Promise<InvoiceRow[]> {
+  let query = db()
+    .from("invoices")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(options.limit ?? 200);
+
+  if (options.status) query = query.eq("status", options.status);
+  if (options.requestId) query = query.eq("request_id", options.requestId);
+  if (options.search) {
+    const term = options.search.replace(/[%,()]/g, " ").trim();
+    if (term) {
+      query = query.or(
+        [
+          `reference.ilike.%${term}%`,
+          `bill_to_company.ilike.%${term}%`,
+          `bill_to_email.ilike.%${term}%`,
+          `request_reference.ilike.%${term}%`,
+        ].join(","),
+      );
+    }
+  }
+
+  const { data, error } = await query;
+  if (error) throw invoiceTrouble(error.message);
+  return (data ?? []) as InvoiceRow[];
+}
+
+export async function getInvoice(id: string): Promise<InvoiceRow | null> {
+  const { data, error } = await db()
+    .from("invoices")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw invoiceTrouble(error.message);
+  return (data as InvoiceRow) ?? null;
+}
+
+/** The invoices raised against one request, newest first. Never throws. */
+export async function invoicesForRequest(requestId: string): Promise<InvoiceRow[]> {
+  try {
+    return await listInvoices({ requestId, limit: 50 });
+  } catch {
+    return [];
+  }
 }

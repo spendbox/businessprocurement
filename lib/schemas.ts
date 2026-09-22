@@ -128,10 +128,10 @@ export const vendorSchema = z.object({
 export type VendorInput = z.infer<typeof vendorSchema>;
 
 /**
- * Human-readable reference, e.g. SPB-4K2P-7QX.
+ * Human-readable reference, e.g. SPB-4K2P-7QX or INV-9F3D-2HK.
  * Short enough to read over the phone, unique enough for our volumes.
  */
-export function makeReference(prefix: "SPB" | "VND"): string {
+export function makeReference(prefix: "SPB" | "VND" | "INV"): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1
   const pick = (n: number) =>
     Array.from(

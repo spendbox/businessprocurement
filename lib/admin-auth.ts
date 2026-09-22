@@ -12,22 +12,12 @@
  * middleware (edge) and in route handlers (node).
  */
 
+import { cookieOptions, secret, sign, verify } from "./signing";
+
 export const SESSION_COOKIE = "spendbox_admin";
 const SESSION_DAYS = 7;
 
 export type AdminSession = { email: string; exp: number };
-
-function b64urlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function b64urlDecode(value: string): Uint8Array {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
-}
 
 /** Compare without leaking how much of the value matched. */
 export function safeEqual(a: string, b: string): boolean {
@@ -44,25 +34,6 @@ export function safeEqual(a: string, b: string): boolean {
     diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
-}
-
-function secret(): string | null {
-  const value = process.env.ADMIN_SESSION_SECRET;
-  // A short secret is worse than none, because it looks configured.
-  if (!value || value.length < 16) return null;
-  return value;
-}
-
-async function key(): Promise<CryptoKey | null> {
-  const value = secret();
-  if (!value) return null;
-  return crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(value),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"],
-  );
 }
 
 export function adminConfigured(): boolean {
@@ -83,52 +54,13 @@ export function adminSetupProblem(): string | null {
 }
 
 export async function createSession(email: string): Promise<string | null> {
-  const signingKey = await key();
-  if (!signingKey) return null;
-
-  const payload: AdminSession = {
-    email,
-    exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
-  };
-  const body = b64urlEncode(new TextEncoder().encode(JSON.stringify(payload)));
-  const mac = await crypto.subtle.sign(
-    "HMAC",
-    signingKey,
-    new TextEncoder().encode(body),
-  );
-  return `${body}.${b64urlEncode(new Uint8Array(mac))}`;
+  return sign("admin-session", { email }, SESSION_DAYS * 24 * 60 * 60 * 1000);
 }
 
-export async function readSession(token: string | undefined): Promise<AdminSession | null> {
-  if (!token) return null;
-  const signingKey = await key();
-  if (!signingKey) return null;
-
-  const [body, mac] = token.split(".");
-  if (!body || !mac) return null;
-
-  let valid = false;
-  try {
-    valid = await crypto.subtle.verify(
-      "HMAC",
-      signingKey,
-      b64urlDecode(mac) as unknown as ArrayBuffer,
-      new TextEncoder().encode(body),
-    );
-  } catch {
-    return null;
-  }
-  if (!valid) return null;
-
-  try {
-    const session = JSON.parse(
-      new TextDecoder().decode(b64urlDecode(body)),
-    ) as AdminSession;
-    if (typeof session.exp !== "number" || session.exp < Date.now()) return null;
-    return session;
-  } catch {
-    return null;
-  }
+export async function readSession(
+  token: string | undefined,
+): Promise<AdminSession | null> {
+  return verify<{ email: string }>("admin-session", token);
 }
 
 /** Checks a sign-in attempt against the configured credentials. */
@@ -146,12 +78,6 @@ export function credentialsMatch(email: string, password: string): boolean {
   return emailOk && passwordOk;
 }
 
-export const sessionCookieOptions = (maxAgeSeconds: number) => ({
-  httpOnly: true,
-  sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-  maxAge: maxAgeSeconds,
-});
+export const sessionCookieOptions = cookieOptions;
 
 export const SESSION_MAX_AGE = SESSION_DAYS * 24 * 60 * 60;

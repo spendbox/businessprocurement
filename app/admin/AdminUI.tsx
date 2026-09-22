@@ -132,7 +132,88 @@ export type MatchVendor = {
   categories: string[];
   regions: string[];
   fulfilment_speed: string;
+  score: number;
+  reasons: string[];
+  gaps: string[];
+  recommended: boolean;
 };
+
+function Fit({ score }: { score: number }) {
+  // Five pips rather than a raw number — the score is a sort order, not a
+  // measurement, and showing "87" invites false precision.
+  const pips = Math.max(1, Math.min(5, Math.round(score / 28)));
+  return (
+    <span className="flex shrink-0 items-center gap-1.5" title={`Fit ${pips} of 5`}>
+      <span aria-hidden className="flex gap-0.5">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <i
+            key={n}
+            className={`h-1.5 w-1.5 rounded-full ${n <= pips ? "bg-forest-500" : "bg-bone-300"}`}
+          />
+        ))}
+      </span>
+      <span className="sr-only">Fit {pips} of 5</span>
+    </span>
+  );
+}
+
+function VendorPick({
+  vendor,
+  checked,
+  onToggle,
+}: {
+  vendor: MatchVendor;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-start gap-3 rounded-xl border-[1.5px] p-3.5 transition-colors ${
+        checked ? "border-forest-500 bg-forest-50" : "border-bone-200 bg-white hover:border-bone-300"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="mt-0.5 h-5 w-5 shrink-0 accent-forest-500"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center justify-between gap-2">
+          <span className="truncate text-[14.5px] font-bold text-ink-900">{vendor.company}</span>
+          <Fit score={vendor.score} />
+        </span>
+        <span className="mt-0.5 block truncate text-[13px] text-ink-400">
+          {vendor.contact_name} · {vendor.email}
+        </span>
+        {vendor.reasons.length > 0 && (
+          <span className="mt-1.5 flex flex-wrap gap-1">
+            {vendor.reasons.map((r) => (
+              <span
+                key={r}
+                className="rounded-full bg-forest-50 px-2 py-0.5 text-[11.5px] font-semibold text-forest-700"
+              >
+                {r}
+              </span>
+            ))}
+          </span>
+        )}
+        {vendor.gaps.length > 0 && (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {vendor.gaps.map((g) => (
+              <span
+                key={g}
+                className="rounded-full bg-clay-400/12 px-2 py-0.5 text-[11.5px] font-semibold text-clay-400"
+              >
+                {g}
+              </span>
+            ))}
+          </span>
+        )}
+      </span>
+    </label>
+  );
+}
 
 export function SendToMerchants({
   requestId,
@@ -142,13 +223,28 @@ export function SendToMerchants({
   vendors: MatchVendor[];
 }) {
   const router = useRouter();
-  const [picked, setPicked] = useState<string[]>(vendors.map((v) => v.id));
+  const recommended = vendors.filter((v) => v.recommended);
+  const others = vendors.filter((v) => !v.recommended);
+
+  const [picked, setPicked] = useState<string[]>(recommended.map((v) => v.id));
+  const [showOthers, setShowOthers] = useState(false);
+  const [search, setSearch] = useState("");
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const toggle = (id: string) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
+  const visibleOthers = others.filter((v) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      v.company.toLowerCase().includes(q) ||
+      v.email.toLowerCase().includes(q) ||
+      v.categories.some((c) => c.toLowerCase().includes(q))
+    );
+  });
 
   const send = async () => {
     setSending(true);
@@ -160,10 +256,7 @@ export function SendToMerchants({
         body: JSON.stringify({ requestId, vendorIds: picked, note }),
       });
       const data = await response.json().catch(() => null);
-      setResult({
-        ok: Boolean(data?.ok),
-        message: data?.message ?? "Something went wrong.",
-      });
+      setResult({ ok: Boolean(data?.ok), message: data?.message ?? "Something went wrong." });
       if (data?.ok) router.refresh();
     } catch {
       setResult({ ok: false, message: "Could not reach the server." });
@@ -175,47 +268,81 @@ export function SendToMerchants({
   if (vendors.length === 0) {
     return (
       <p className="rounded-xl border border-bone-200 bg-bone-50 px-4 py-4 text-[14px] leading-relaxed text-ink-500">
-        No approved merchant currently supplies these categories and covers this
-        location. Approve a matching merchant, or widen an existing one&apos;s
-        coverage, and they will appear here.
+        There are no approved merchants yet. Approve one on the Merchants page
+        and they will show up here.
       </p>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <ul className="flex flex-col gap-2">
-        {vendors.map((v) => {
-          const on = picked.includes(v.id);
-          return (
-            <li key={v.id}>
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-xl border-[1.5px] p-3.5 transition-colors ${
-                  on ? "border-forest-500 bg-forest-50" : "border-bone-200 bg-white"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={() => toggle(v.id)}
-                  className="mt-0.5 h-5 w-5 shrink-0 accent-forest-500"
-                />
-                <span className="min-w-0">
-                  <span className="block text-[14.5px] font-bold text-ink-900">
-                    {v.company}
-                  </span>
-                  <span className="block truncate text-[13px] text-ink-400">
-                    {v.contact_name} · {v.email}
-                  </span>
-                  <span className="mt-1 block text-[12.5px] text-ink-300">
-                    {v.categories.join(", ")} · {v.fulfilment_speed}
-                  </span>
-                </span>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
+    <div className="flex flex-col gap-5">
+      <div>
+        <p className="mb-2.5 text-[13px] font-bold uppercase tracking-[0.08em] text-ink-500">
+          Best matches ({recommended.length})
+        </p>
+        {recommended.length === 0 ? (
+          <p className="rounded-xl border border-bone-200 bg-bone-50 px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-500">
+            No approved merchant both supplies these categories and covers this
+            location. You can still pick from everyone below.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {recommended.map((v) => (
+              <li key={v.id}>
+                <VendorPick vendor={v} checked={picked.includes(v.id)} onToggle={() => toggle(v.id)} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {others.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowOthers((o) => !o)}
+            aria-expanded={showOthers}
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-bone-200 bg-bone-50 px-4 py-3 text-left transition-colors hover:bg-bone-100"
+          >
+            <span className="text-[14px] font-bold text-ink-800">
+              Add other merchants ({others.length})
+            </span>
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden
+              className={`h-4 w-4 shrink-0 text-ink-400 transition-transform ${showOthers ? "rotate-180" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+            >
+              <path d="M6 9.5 12 15l6-5.5" />
+            </svg>
+          </button>
+
+          {showOthers && (
+            <div className="mt-3 flex flex-col gap-2">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by company, email or category"
+                aria-label="Search other merchants"
+                className="min-h-[44px] w-full rounded-xl border-[1.5px] border-bone-200 bg-white px-3.5 text-[14px] outline-none focus:border-forest-500"
+              />
+              <ul className="flex max-h-[420px] flex-col gap-2 overflow-y-auto">
+                {visibleOthers.map((v) => (
+                  <li key={v.id}>
+                    <VendorPick vendor={v} checked={picked.includes(v.id)} onToggle={() => toggle(v.id)} />
+                  </li>
+                ))}
+                {visibleOthers.length === 0 && (
+                  <li className="px-1 py-2 text-[13.5px] text-ink-400">No match.</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <label className="flex flex-col gap-2">
         <span className="text-[13px] font-bold text-ink-800">

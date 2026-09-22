@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { Popover } from "./Popover";
 import { COUNTRIES, countryByName } from "@/lib/geo";
 import { Check, Search } from "./Icons";
 
@@ -34,6 +34,7 @@ export function PhoneField({
   const [query, setQuery] = useState("");
   const [touchedCode, setTouchedCode] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
+  const codeButton = useRef<HTMLButtonElement>(null);
 
   const fromCountry = countryName ? countryByName(countryName) : undefined;
 
@@ -96,13 +97,13 @@ export function PhoneField({
 
   return (
     <div className="flex flex-col gap-2" ref={wrap}>
-      <label htmlFor={id} className="text-[13px] font-bold text-ink-800">
+      <label htmlFor={id} className="text-[14px] font-bold text-ink-800">
         {label}
       </label>
       {hint && <p className="-mt-1 text-[13px] leading-snug text-ink-400">{hint}</p>}
 
       <div
-        className={`relative flex min-h-[50px] items-stretch rounded-xl border-[1.5px] bg-bone-50 transition-[border-color,box-shadow,background-color] duration-200 focus-within:border-forest-500 focus-within:bg-white focus-within:ring-4 focus-within:ring-forest-500/14 ${
+        className={`relative flex min-h-[56px] items-stretch rounded-2xl border-[1.5px] bg-bone-50 transition-[border-color,box-shadow,background-color] duration-200 focus-within:border-forest-500 focus-within:bg-white focus-within:ring-4 focus-within:ring-forest-500/14 ${
           error ? "border-clay-400/70" : "border-bone-200"
         }`}
       >
@@ -114,7 +115,8 @@ export function PhoneField({
           }}
           aria-label={`Country code, currently ${dial}${active ? ` for ${active.name}` : ""}`}
           aria-expanded={open}
-          className="flex shrink-0 items-center gap-1.5 rounded-l-[10px] border-r-[1.5px] border-bone-200 px-3.5 text-[15px] font-bold text-ink-800 transition-colors hover:bg-bone-200/60"
+          ref={codeButton}
+          className="flex shrink-0 items-center gap-1.5 rounded-l-[14px] border-r-[1.5px] border-bone-200 px-4 text-[16px] font-bold text-ink-800 transition-colors hover:bg-bone-200/60"
         >
           {dial}
           <svg
@@ -142,59 +144,61 @@ export function PhoneField({
             const cleaned = e.target.value.replace(/[^\d\s()-]/g, "");
             onChange(`${dial} ${cleaned}`.trim());
           }}
-          className="min-w-0 flex-1 bg-transparent px-4 text-[15px] text-ink-800 outline-none placeholder:text-ink-300"
+          className="min-w-0 flex-1 bg-transparent px-4 text-[16px] text-ink-800 outline-none placeholder:text-ink-300"
         />
 
-        <AnimatePresence>
-          {open && (
-            <motion.ul
-              role="listbox"
-              aria-label="Country dialling code"
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.16, ease: [0.22, 0.72, 0.18, 1] }}
-              className="absolute left-0 top-[calc(100%+6px)] z-30 max-h-[min(300px,42svh)] w-full min-w-[260px] overflow-y-auto overscroll-contain rounded-xl border-[1.5px] border-bone-200 bg-white p-1 shadow-lift"
-            >
-              <li className="sticky top-0 z-10 bg-white p-1">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
-                  <input
-                    autoFocus
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search country or code"
-                    aria-label="Search country or dialling code"
-                    className="w-full rounded-lg border-[1.5px] border-bone-200 bg-bone-50 py-2 pl-9 pr-3 text-[14px] outline-none focus:border-forest-500"
-                  />
-                </div>
-              </li>
-              {matches.map((c) => (
-                <li key={c.code}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={c.dial === dial}
-                    onClick={() => setDial(c.dial)}
-                    className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-[14.5px] transition-colors hover:bg-bone-100 ${
-                      c.dial === dial ? "font-bold text-ink-900" : "font-medium text-ink-700"
-                    }`}
-                  >
-                    <span className="truncate">{c.name}</span>
-                    <span className="flex shrink-0 items-center gap-2 tabular-nums text-ink-400">
-                      {c.dial}
-                      {c.dial === dial && <Check className="h-4 w-4 text-forest-500" />}
-                    </span>
-                  </button>
-                </li>
-              ))}
-              {matches.length === 0 && (
-                <li className="px-3 py-3 text-[13.5px] text-ink-400">No match.</li>
-              )}
-            </motion.ul>
-          )}
-        </AnimatePresence>
       </div>
+
+      <Popover
+        open={open}
+        anchorRef={codeButton}
+        onDismiss={() => {
+          setOpen(false);
+          setQuery("");
+        }}
+      >
+        <div className="flex max-h-[inherit] flex-col">
+          <div className="shrink-0 border-b border-bone-200 p-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search country or code"
+                aria-label="Search country or dialling code"
+                className="min-h-[48px] w-full rounded-xl border-[1.5px] border-bone-200 bg-bone-50 py-2 pl-9 pr-3 text-[15.5px] outline-none focus:border-forest-500"
+              />
+            </div>
+          </div>
+          <ul role="listbox" aria-label="Country dialling code" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
+            {matches.map((c) => (
+              <li key={c.code}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={c.dial === dial}
+                  onPointerDown={(e) => e.preventDefault()}
+                  onClick={() => setDial(c.dial)}
+                  className={`flex min-h-[52px] w-full items-center justify-between gap-3 rounded-xl px-3.5 text-left text-[15.5px] transition-colors hover:bg-bone-100 ${
+                    c.dial === dial ? "font-bold text-ink-900" : "font-medium text-ink-700"
+                  }`}
+                >
+                  <span className="truncate">{c.name}</span>
+                  <span className="flex shrink-0 items-center gap-2 tabular-nums text-ink-400">
+                    {c.dial}
+                    {c.dial === dial && <Check className="h-4 w-4 text-forest-500" />}
+                  </span>
+                </button>
+              </li>
+            ))}
+            {matches.length === 0 && (
+              <li className="px-3 py-4 text-[14px] text-ink-400">No match.</li>
+            )}
+          </ul>
+        </div>
+      </Popover>
+
 
       {error && (
         <p role="alert" className="text-[13px] font-semibold text-clay-400">

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, readSession } from "@/lib/admin-auth";
 import { PORTAL_COOKIE, readPortalSession } from "@/lib/portal-auth";
+import { portalEnabled } from "@/lib/features";
 
 /**
  * Gate the whole dashboard at the edge, so an unauthenticated request never
@@ -26,6 +27,9 @@ export async function middleware(request: NextRequest) {
   /* The business / merchant portal. Signing in is optional, but the pages
      behind it only ever show one verified address's own rows. */
   if (pathname.startsWith("/portal")) {
+    // Switched off for now — let the pages return their own 404.
+    if (!portalEnabled()) return NextResponse.next();
+
     // The login page and the link-verification route must stay reachable.
     if (pathname === "/portal/login" || pathname === "/portal/verify") {
       return NextResponse.next();

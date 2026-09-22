@@ -35,7 +35,7 @@ create table if not exists public.procurement_requests (
   needed_by       date,
   country         text not null default 'Nigeria',
   region          text not null,
-  city            text not null,
+  city            text,
   address         text,
 
   -- who is asking
@@ -152,3 +152,13 @@ begin
       check (attachment_timing in ('now','later'));
   end if;
 end $$;
+
+-- ------------------------------------------------------------
+-- Upgrade for the single smart request form
+--
+-- The buyer now writes one message and the structured fields are
+-- read out of it, so the city may legitimately be unknown at the
+-- point the request is saved. Safe to run twice.
+-- ------------------------------------------------------------
+alter table public.procurement_requests
+  alter column city drop not null;

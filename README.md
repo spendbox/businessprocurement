@@ -116,6 +116,34 @@ not be delivered rather than being shown a fake success screen.
 
 ---
 
+## How a request gets filled in
+
+The buyer writes **one message** — what they need, how many, where, budget,
+how soon, in any order and in their own words. They can attach the actual
+purchase order or spreadsheet rather than describe it.
+
+As they type, the server reads the message and pulls out the structure:
+category, quantity, budget band, state and city, and urgency. A live
+checklist shows what has been picked up and what is still missing, so they
+can see the gap and fill it in their own words instead of being marched
+through fields.
+
+After that it is four short steps — how soon, where it is going (prefilled
+from what was read), and who is asking. Eight screens in total, most of them
+one tap.
+
+The reading runs on a local pass that needs no key: keyword matching for
+category, regex for naira amounts and quantities, and the real Nigerian state
+and city lists for place names. Setting `OPENAI_API_KEY` adds a model pass on
+top and the local pass fills any blank it leaves. Everything read is shown on
+the review screen and can be corrected there — and the raw message always
+reaches the sourcing team intact, whatever the reading made of it.
+
+Attachments (up to 5 files, 8MB each) ride along on the internal email, so
+the team opens the real file. No storage bucket to configure.
+
+---
+
 ## When email is not arriving
 
 Open **`/admin/diagnostics`**. It reads the live deployment and tells you, in
@@ -145,26 +173,20 @@ that. Nothing appears until a request has actually hit the server.
 
 ---
 
-## Sign-in for businesses and merchants
+## Sign-in for businesses (built, switched off)
 
-Anyone who has sent a request can sign in at **`/portal`** to see it and its
-status, and send another without retyping who they are. **Signing in is never
-required** — every request works exactly as before without it.
+There is a working passwordless portal at `/portal` — a business enters the
+email they used, gets a 30-minute link, and sees their requests and status.
+It is **turned off**: those pages return 404 and nothing on the site links to
+them.
 
-There are no passwords. A request is already tied to the email it was sent
-from, so proving you can read that inbox is the right test:
+To switch it on, set `NEXT_PUBLIC_PORTAL_ENABLED=true` in Vercel and redeploy.
+It needs Supabase and Resend.
 
-1. They enter their email at `/portal/login`.
-2. If we hold anything under that address, we email a link good for 30
-   minutes. If we hold nothing, the page says exactly the same thing — that
-   way nobody can use the form to discover which businesses we work with.
-3. The link signs them in for 30 days on that device.
-
-Merchants use the same door and see their application and its status.
-
-It needs Supabase (there is nothing to show without stored rows) and Resend
-(to send the link). It reuses `ADMIN_SESSION_SECRET` for signing — rotating
-that value signs out both the dashboard and every business at once.
+**If one email is both a buyer and a merchant**, it is one sign-in and one
+page showing both: their requests underneath their merchant application.
+There are no separate buyer and merchant accounts — the email is the
+identity, and whatever is filed under it is what they see.
 
 ---
 

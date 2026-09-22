@@ -71,16 +71,6 @@ export function Success({
         </p>
       )}
 
-      <a
-        href="/portal/login"
-        className="text-[13.5px] font-bold text-forest-500 underline decoration-forest-200 decoration-2 underline-offset-4 transition-colors hover:text-forest-600"
-      >
-        Track this {kind === "application" ? "application" : "request"} any time
-      </a>
-      <p className="-mt-2 max-w-[40ch] text-[12.5px] leading-relaxed text-ink-300">
-        Sign in with this email whenever you like — no password, and never
-        required.
-      </p>
     </div>
   );
 }

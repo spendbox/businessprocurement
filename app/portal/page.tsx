@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { PORTAL_COOKIE, readPortalSession } from "@/lib/portal-auth";
+import { portalEnabled } from "@/lib/features";
 import { BUYER_STATUS, VENDOR_STATUS, getPortalData } from "@/lib/portal-data";
 import { DataUnavailable } from "@/lib/admin-data";
 import { URGENCIES, urgencyLabel } from "@/lib/catalog";
@@ -26,6 +27,8 @@ const urgencyShort = (value: string) =>
   URGENCIES.find((u) => u.value === value)?.label ?? value;
 
 export default async function PortalPage() {
+  if (!portalEnabled()) notFound();
+
   const session = await readPortalSession((await cookies()).get(PORTAL_COOKIE)?.value);
   if (!session) redirect("/portal/login");
 

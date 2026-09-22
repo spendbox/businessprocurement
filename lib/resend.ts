@@ -25,6 +25,8 @@ export type SendArgs = {
   html: string;
   text: string;
   replyTo?: string;
+  /** Files forwarded verbatim; `content` is base64 without a data: prefix. */
+  attachments?: { filename: string; content: string }[];
 };
 
 export type SendResult = { ok: boolean; id?: string; error?: string };
@@ -43,6 +45,7 @@ async function send(args: SendArgs): Promise<SendResult> {
       html: args.html,
       text: args.text,
       ...(args.replyTo ? { replyTo: args.replyTo } : {}),
+      ...(args.attachments?.length ? { attachments: args.attachments } : {}),
     });
     if (error) return { ok: false, error: error.message };
     return { ok: true, id: data?.id };

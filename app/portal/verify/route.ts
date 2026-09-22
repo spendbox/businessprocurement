@@ -6,11 +6,14 @@ import {
   readLoginToken,
 } from "@/lib/portal-auth";
 import { cookieOptions } from "@/lib/signing";
+import { portalEnabled } from "@/lib/features";
 
 export const runtime = "nodejs";
 
 /** Turns a link from an email into a signed-in session. */
 export async function GET(request: NextRequest) {
+  if (!portalEnabled()) return new NextResponse(null, { status: 404 });
+
   const token = request.nextUrl.searchParams.get("token") ?? undefined;
   const email = await readLoginToken(token);
 

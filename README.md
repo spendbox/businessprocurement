@@ -145,6 +145,29 @@ that. Nothing appears until a request has actually hit the server.
 
 ---
 
+## Sign-in for businesses and merchants
+
+Anyone who has sent a request can sign in at **`/portal`** to see it and its
+status, and send another without retyping who they are. **Signing in is never
+required** — every request works exactly as before without it.
+
+There are no passwords. A request is already tied to the email it was sent
+from, so proving you can read that inbox is the right test:
+
+1. They enter their email at `/portal/login`.
+2. If we hold anything under that address, we email a link good for 30
+   minutes. If we hold nothing, the page says exactly the same thing — that
+   way nobody can use the form to discover which businesses we work with.
+3. The link signs them in for 30 days on that device.
+
+Merchants use the same door and see their application and its status.
+
+It needs Supabase (there is nothing to show without stored rows) and Resend
+(to send the link). It reuses `ADMIN_SESSION_SECRET` for signing — rotating
+that value signs out both the dashboard and every business at once.
+
+---
+
 ## The admin dashboard
 
 Live at **`/admin`** on your site — for example `https://spendbox.site/admin`.
@@ -175,11 +198,20 @@ build; everyone signed in is signed out the moment you change the secret.
 - **Requests** — search and filter by status, urgency or category. Open one to
   see everything the buyer submitted, move it through `new → sourcing → quoted
   → won / lost`, keep internal notes, and email or call the buyer.
-- **Send to merchants** — on a request, the dashboard lists approved merchants
-  who supply those categories *and* cover that location, you tick the ones you
-  want, add an optional note, and it emails them all at once. They get the item,
-  quantity, destination and deadline — **not** the buyer's name or contact
-  details. Sending moves the request to `sourcing`.
+- **Send to merchants** — on a request, every approved merchant is scored
+  against it and the best matches are listed first, pre-ticked. Each one shows
+  *why*: green chips for what fits ("Supplies 2 of 2 categories", "Covers
+  Lagos", "Fast enough for an urgent order") and red ones for what does not
+  ("Does not cover Lagos"). Score comes from category overlap, whether they
+  reach that location, speed weighed against how urgent the request is, own
+  logistics and years trading.
+
+  **Add other merchants** opens the rest of the approved list, searchable, so
+  you can include someone the scoring would not have picked — a supplier who
+  will travel for a big enough order, or one you are trying out. Tick as many
+  as you like and one click emails them all. They get the item, quantity,
+  destination and deadline — **not** the buyer's name or contact details.
+  Sending moves the request to `sourcing`.
 - **Merchants** — every application, with search and filters, and a dropdown to
   move each between `pending → approved / rejected / paused`. Only *approved*
   merchants are ever offered as recipients.
@@ -353,3 +385,11 @@ public/img/           the twelve category illustrations
 - **The dashboard login has no user table.** Credentials live in environment
   variables and the session is a signed cookie, so there is no account
   database to secure, back up or leak.
+- **Forms ask one question per screen.** Cramming a step full of fields and
+  revealing them as you go made a phone feel crowded; a single question with
+  a progress count is faster to answer and much easier to read.
+- **Dropdowns are rendered outside the form**, into the page body and
+  positioned against the visual viewport, so a long list is never clipped by
+  the panel it sits in and never ends up behind the keyboard.
+- **Portal sessions carry nothing but a verified email**, and every query is
+  scoped to it, so there is no id to tamper with to see someone else's rows.

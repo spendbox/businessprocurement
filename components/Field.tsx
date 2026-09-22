@@ -3,16 +3,17 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Check } from "./Icons";
+import { Combobox } from "./Combobox";
 
 /* ------------------------------------------------------------------ */
 /* Shared shell                                                        */
 /* ------------------------------------------------------------------ */
 
 const inputBase =
-  "w-full rounded-xl border-[1.5px] bg-bone-50 px-4 py-3 text-[15px] leading-normal text-ink-800 " +
+  "w-full rounded-2xl border-[1.5px] bg-bone-50 px-4 py-3.5 text-[16px] leading-normal text-ink-800 " +
   "placeholder:text-ink-300 transition-[border-color,box-shadow,background-color] duration-200 " +
   "hover:border-bone-300 focus:border-forest-500 focus:bg-white focus:outline-none " +
-  "focus:ring-4 focus:ring-forest-500/14 min-h-[50px]";
+  "focus:ring-4 focus:ring-forest-500/14 min-h-[56px]";
 
 function Shell({
   id,
@@ -31,7 +32,7 @@ function Shell({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={id} className="flex items-baseline gap-2 text-[13px] font-bold text-ink-800">
+      <label htmlFor={id} className="flex items-baseline gap-2 text-[14px] font-bold text-ink-800">
         {label}
         {optional && (
           <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-300">
@@ -39,7 +40,7 @@ function Shell({
           </span>
         )}
       </label>
-      {hint && <p className="-mt-1 text-[13px] leading-snug text-ink-400">{hint}</p>}
+      {hint && <p className="-mt-1 text-[13.5px] leading-snug text-ink-400">{hint}</p>}
       {children}
       {error && (
         <p role="alert" className="text-[13px] font-semibold text-clay-400">
@@ -133,12 +134,17 @@ export function TextArea({
   );
 }
 
+/**
+ * A dropdown. Delegates to Combobox so that native selects — which look
+ * different on every platform and open a different kind of panel — do not
+ * appear next to the app's own dropdowns.
+ */
 export function SelectField({
   label,
   value,
   onChange,
   options,
-  placeholder = "Select one",
+  placeholder = "Choose one",
   hint,
   error,
   optional,
@@ -152,39 +158,17 @@ export function SelectField({
   error?: string;
   optional?: boolean;
 }) {
-  const id = useId();
   return (
-    <Shell id={id} label={label} hint={hint} error={error} optional={optional}>
-      <div className="relative">
-        <select
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          aria-invalid={error ? true : undefined}
-          className={`${inputBase} appearance-none pr-11 ${borderFor(error)} ${
-            value ? "text-ink-800" : "text-ink-300"
-          }`}
-        >
-          <option value="">{placeholder}</option>
-          {options.map((o) => (
-            <option key={o} value={o} className="text-ink-800">
-              {o}
-            </option>
-          ))}
-        </select>
-        <svg
-          viewBox="0 0 24 24"
-          aria-hidden
-          className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-        >
-          <path d="M6 9.5 12 15l6-5.5" />
-        </svg>
-      </div>
-    </Shell>
+    <Combobox
+      label={label}
+      value={value}
+      onChange={onChange}
+      options={options}
+      placeholder={placeholder}
+      hint={hint}
+      error={error}
+      optional={optional}
+    />
   );
 }
 
@@ -220,7 +204,7 @@ export function ChipGroup({
               type="button"
               onClick={() => onToggle(option)}
               aria-pressed={on}
-              className={`inline-flex min-h-[44px] items-center gap-2 rounded-full border-[1.5px] px-4 text-[14px] font-semibold transition-all duration-200 ${
+              className={`inline-flex min-h-[48px] items-center gap-2 rounded-full border-[1.5px] px-4.5 text-[15px] font-semibold transition-all duration-200 ${
                 on
                   ? "border-forest-500 bg-forest-500 text-white shadow-[0_8px_20px_-10px_rgba(15,122,82,0.7)]"
                   : "border-bone-200 bg-bone-50 text-ink-500 hover:border-forest-200 hover:bg-forest-50 hover:text-ink-800"
@@ -511,7 +495,7 @@ export function CountedTextArea({
           {words} {words === 1 ? "word" : "words"}
         </span>
       </div>
-      {hint && <p className="-mt-1 text-[13px] leading-snug text-ink-400">{hint}</p>}
+      {hint && <p className="-mt-1 text-[13.5px] leading-snug text-ink-400">{hint}</p>}
 
       <textarea
         id={id}

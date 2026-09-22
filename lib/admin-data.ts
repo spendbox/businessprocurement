@@ -158,26 +158,113 @@ export async function listVendors(options: {
 }
 
 /**
- * Merchants worth sending a given request to: approved, supplying at least
- * one of its categories, and covering where it has to go.
+ * Every approved merchant, scored against a request.
+ *
+ * Returns all of them rather than only the ones that match, because the
+ * person deciding sometimes knows something the data does not — a supplier
+ * who will travel for a big enough order, or one being tried out. The score
+ * sorts the list and the reasons explain it; nobody is hidden.
  */
-export async function matchingVendors(request: RequestRow): Promise<VendorRow[]> {
+export type ScoredVendor = VendorRow & {
+  score: number;
+  reasons: string[];
+  gaps: string[];
+  /** Above the bar we would recommend sending to. */
+  recommended: boolean;
+};
+
+const URGENT = new Set(["same-day", "48-hours"]);
+const FAST = new Set(["Same or next day", "2–5 working days"]);
+
+const TRADING_POINTS: Record<string, number> = {
+  "Over 10 years": 8,
+  "3–10 years": 5,
+  "1–3 years": 2,
+  "Less than a year": 0,
+};
+
+export function scoreVendor(vendor: VendorRow, request: RequestRow): ScoredVendor {
+  const reasons: string[] = [];
+  const gaps: string[] = [];
+  let score = 0;
+
+  /* Category fit is the thing that matters most. */
+  const wanted = request.categories ?? [];
+  const overlap = wanted.filter((c) => vendor.categories.includes(c));
+  if (overlap.length > 0) {
+    score += Math.min(80, overlap.length * 40);
+    reasons.push(
+      overlap.length === wanted.length
+        ? `Supplies all ${wanted.length === 1 ? "of it" : `${wanted.length} categories`}`
+        : `Supplies ${overlap.length} of ${wanted.length} categories`,
+    );
+  } else {
+    gaps.push("Does not list these categories");
+  }
+
+  /* Can they actually get it there? */
+  const inNigeria = (request.country ?? "Nigeria") === "Nigeria";
+  if (!inNigeria) {
+    if (vendor.regions.includes("Import / outside Nigeria")) {
+      score += 25;
+      reasons.push("Handles imports");
+    } else {
+      gaps.push(`Not set up for ${request.country}`);
+    }
+  } else if (vendor.regions.includes(request.region)) {
+    score += 30;
+    reasons.push(`Covers ${request.region}`);
+  } else if (vendor.regions.includes("Nationwide (Nigeria)")) {
+    score += 22;
+    reasons.push("Covers nationwide");
+  } else {
+    gaps.push(`Does not cover ${request.region}`);
+  }
+
+  /* Speed, weighed against how soon the buyer needs it. */
+  if (URGENT.has(request.urgency)) {
+    if (vendor.fulfilment_speed === "Same or next day") {
+      score += 20;
+      reasons.push("Fast enough for an urgent order");
+    } else if (FAST.has(vendor.fulfilment_speed)) {
+      score += 8;
+    } else {
+      gaps.push(`Only fulfils in ${vendor.fulfilment_speed.toLowerCase()}`);
+    }
+  } else {
+    score += 10;
+  }
+
+  if (vendor.own_logistics) {
+    score += 6;
+    reasons.push("Delivers themselves");
+  }
+  score += TRADING_POINTS[vendor.years_trading] ?? 0;
+  if (vendor.years_trading === "Over 10 years") reasons.push("Over ten years trading");
+
+  /* Worth sending to when they can supply it AND can get it there. */
+  const canSupply = overlap.length > 0;
+  const canReach = !gaps.some((g) => g.startsWith("Does not cover") || g.startsWith("Not set up"));
+
+  return { ...vendor, score, reasons, gaps, recommended: canSupply && canReach };
+}
+
+export async function rankedVendors(request: RequestRow): Promise<ScoredVendor[]> {
   const { data, error } = await db()
     .from("vendor_applications")
     .select("*")
     .eq("status", "approved")
-    .overlaps("categories", request.categories)
-    .order("created_at", { ascending: false });
+    .limit(500);
   if (error) throw new DataUnavailable(error.message);
 
-  const vendors = (data ?? []) as VendorRow[];
-  const inNigeria = (request.country ?? "Nigeria") === "Nigeria";
+  return ((data ?? []) as VendorRow[])
+    .map((v) => scoreVendor(v, request))
+    .sort((a, b) => b.score - a.score || a.company.localeCompare(b.company));
+}
 
-  return vendors.filter((v) => {
-    if (v.regions.includes("Nationwide (Nigeria)") && inNigeria) return true;
-    if (!inNigeria) return v.regions.includes("Import / outside Nigeria");
-    return v.regions.includes(request.region);
-  });
+/** Kept for the "who could take this" count on the overview. */
+export async function matchingVendors(request: RequestRow): Promise<VendorRow[]> {
+  return (await rankedVendors(request)).filter((v) => v.recommended);
 }
 
 /* ------------------------------------------------------------------ */

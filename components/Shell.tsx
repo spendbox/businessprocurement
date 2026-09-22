@@ -14,7 +14,14 @@ import dynamic from "next/dynamic";
 const OrderForm = dynamic(() => import("./OrderForm").then((m) => m.OrderForm));
 const VendorForm = dynamic(() => import("./VendorForm").then((m) => m.VendorForm));
 
-export type Prefill = { need?: string; categories?: string[] };
+export type Prefill = {
+  need?: string;
+  categories?: string[];
+  /** Filled in for a signed-in business so they do not retype themselves. */
+  company?: string;
+  contactName?: string;
+  email?: string;
+};
 
 type ShellValue = {
   openOrder: (prefill?: Prefill) => void;

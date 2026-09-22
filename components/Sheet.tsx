@@ -14,6 +14,7 @@ export function Sheet({
   title,
   subtitle,
   progress,
+  stepLabel,
   children,
   footer,
   /** Changing this scrolls the body back to the top — one per step. */
@@ -24,6 +25,8 @@ export function Sheet({
   title: string;
   subtitle?: string;
   progress?: number;
+  /** e.g. "3 of 12", shown beside the progress bar. */
+  stepLabel?: string;
   children: ReactNode;
   footer?: ReactNode;
   scrollKey?: string | number;
@@ -107,7 +110,7 @@ export function Sheet({
     <AnimatePresence>
       {open && (
         <div
-          className="fixed inset-x-0 z-[90] flex items-end justify-center sm:items-center sm:p-6"
+          className="fixed inset-x-0 z-[90] flex items-end justify-center p-2 pb-3 sm:items-center sm:p-6"
           style={
             viewport
               ? { top: viewport.top, height: viewport.height }
@@ -139,15 +142,11 @@ export function Sheet({
              * Height is capped against the visual viewport so the footer
              * button always sits just above the keyboard, never behind it.
              */
-            style={{ maxHeight: viewport ? viewport.height - 8 : undefined }}
-            className="relative flex max-h-[94svh] w-full flex-col overflow-hidden rounded-t-[26px] bg-bone-100 shadow-lift-lg sm:max-h-[88svh] sm:max-w-[640px] sm:rounded-[26px]"
+            /* 28px of breathing room so the footer never hugs the keyboard. */
+            style={{ maxHeight: viewport ? viewport.height - 28 : undefined }}
+            className="relative flex max-h-[92svh] w-full flex-col overflow-hidden rounded-[24px] bg-bone-100 shadow-lift-lg sm:max-h-[88svh] sm:max-w-[600px] sm:rounded-[26px]"
           >
-            <div
-              aria-hidden
-              className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-bone-300 sm:hidden"
-            />
-
-            <header className="shrink-0 px-5 pb-4 pt-3.5 sm:px-8 sm:pt-7">
+            <header className="shrink-0 px-5 pb-4 pt-5 sm:px-8 sm:pt-7">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h2 className="font-display text-[21px] font-bold leading-tight tracking-[-0.015em] text-ink-900 sm:text-[26px]">
@@ -170,13 +169,20 @@ export function Sheet({
               </div>
 
               {typeof progress === "number" && (
-                <div className="mt-4 h-1 overflow-hidden rounded-full bg-bone-200 sm:mt-5">
-                  <motion.div
-                    className="h-full rounded-full bg-forest-500"
-                    initial={false}
-                    animate={{ width: `${Math.round(progress * 100)}%` }}
-                    transition={{ type: "spring", stiffness: 260, damping: 32 }}
-                  />
+                <div className="mt-4 flex items-center gap-3 sm:mt-5">
+                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-bone-200">
+                    <motion.div
+                      className="h-full rounded-full bg-forest-500"
+                      initial={false}
+                      animate={{ width: `${Math.round(progress * 100)}%` }}
+                      transition={{ type: "spring", stiffness: 260, damping: 32 }}
+                    />
+                  </div>
+                  {stepLabel && (
+                    <span className="shrink-0 text-[12px] font-bold tabular-nums text-ink-300">
+                      {stepLabel}
+                    </span>
+                  )}
                 </div>
               )}
             </header>
@@ -190,7 +196,7 @@ export function Sheet({
             </div>
 
             {footer && (
-              <footer className="shrink-0 border-t border-bone-200 bg-bone-50/95 px-5 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] backdrop-blur sm:px-8 sm:py-4">
+              <footer className="shrink-0 border-t border-bone-200 bg-bone-50/95 px-5 py-4 backdrop-blur sm:px-8">
                 {footer}
               </footer>
             )}

@@ -4,7 +4,7 @@ import {
   DataUnavailable,
   REQUEST_STATUSES,
   getRequest,
-  matchingVendors,
+  rankedVendors,
 } from "@/lib/admin-data";
 import { ATTACHMENT_TIMING, urgencyLabel, URGENCIES } from "@/lib/catalog";
 import {
@@ -47,7 +47,7 @@ export default async function RequestDetail({
   try {
     request = await getRequest(id);
     if (!request) notFound();
-    vendors = await matchingVendors(request);
+    vendors = await rankedVendors(request);
   } catch (error) {
     if (error instanceof DataUnavailable) return <NeedsDatabase detail={error.message} />;
     throw error;
@@ -135,6 +135,10 @@ export default async function RequestDetail({
                 categories: v.categories,
                 regions: v.regions,
                 fulfilment_speed: v.fulfilment_speed,
+                score: v.score,
+                reasons: v.reasons,
+                gaps: v.gaps,
+                recommended: v.recommended,
               }))}
             />
           </Panel>

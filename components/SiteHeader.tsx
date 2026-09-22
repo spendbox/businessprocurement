@@ -36,15 +36,21 @@ export function SiteHeader() {
         <nav className="flex items-center gap-1 sm:gap-2">
           <a
             href="#how"
-            className="hidden rounded-full px-3.5 py-2 text-[14px] font-semibold text-ink-500 transition-colors hover:bg-bone-200/70 hover:text-ink-900 sm:block"
+            className="hidden rounded-full px-3.5 py-2 text-[14px] font-semibold text-ink-500 transition-colors hover:bg-bone-200/70 hover:text-ink-900 lg:block"
           >
             How it works
           </a>
           <a
             href="#catalog"
-            className="hidden rounded-full px-3.5 py-2 text-[14px] font-semibold text-ink-500 transition-colors hover:bg-bone-200/70 hover:text-ink-900 sm:block"
+            className="hidden rounded-full px-3.5 py-2 text-[14px] font-semibold text-ink-500 transition-colors hover:bg-bone-200/70 hover:text-ink-900 lg:block"
           >
             What we source
+          </a>
+          <a
+            href="/portal/login"
+            className="rounded-full px-3 py-2 text-[14px] font-semibold text-ink-500 transition-colors hover:bg-bone-200/70 hover:text-ink-900"
+          >
+            Sign in
           </a>
           <button
             type="button"

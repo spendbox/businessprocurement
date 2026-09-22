@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, readSession } from "@/lib/admin-auth";
-import { getRequest, matchingVendors, type VendorRow } from "@/lib/admin-data";
+import { getRequest, rankedVendors, type VendorRow } from "@/lib/admin-data";
 import { getSupabase } from "@/lib/supabase";
 import { urgencyLabel } from "@/lib/catalog";
 import { layout, rows, textVersion, type Row } from "@/lib/email";
@@ -57,15 +57,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Request not found." }, { status: 404 });
   }
 
-  // Only ever email merchants who actually matched this request.
-  const eligible = await matchingVendors(procurement);
+  /*
+   * Any approved merchant the admin picked is fair game — they can see the
+   * score and the gaps and may still have a reason to ask. The guard that
+   * matters is that the merchant is approved, which rankedVendors enforces.
+   */
+  const eligible = await rankedVendors(procurement);
   const recipients = eligible.filter((v) => vendorIds.includes(v.id));
 
   if (recipients.length === 0) {
     return NextResponse.json(
       {
         ok: false,
-        message: "None of those merchants match this request any more.",
+        message:
+          "None of those merchants are approved any more. Refresh and pick again.",
       },
       { status: 422 },
     );

@@ -3,6 +3,7 @@ import { guardApi } from "@/lib/admin-guard";
 import { deleteVendor } from "@/lib/admin-data";
 import { getSupabase } from "@/lib/supabase";
 import { fieldErrors, makeReference, manualVendorSchema } from "@/lib/schemas";
+import { parseDiscount } from "@/lib/discount";
 import { layout, rows, textVersion, type Row } from "@/lib/email";
 import { sendToCustomer, emailConfigured } from "@/lib/resend";
 
@@ -55,6 +56,14 @@ export async function POST(request: Request) {
   const vendor = parsed.data;
   const reference = makeReference("VND");
 
+  const discount = parseDiscount(vendor.discountMin, vendor.discountMax);
+  if (!discount.ok) {
+    return NextResponse.json(
+      { ok: false, message: discount.message, errors: { discountMin: discount.message } },
+      { status: 422 },
+    );
+  }
+
   const { data, error } = await db
     .from("vendor_applications")
     .insert({
@@ -79,6 +88,9 @@ export async function POST(request: Request) {
       status: vendor.status,
       internal_notes: vendor.internalNotes || null,
       assigned_to: vendor.assignedTo || null,
+      marketer_id: vendor.marketerId || null,
+      discount_min: discount.min,
+      discount_max: discount.max,
       added_by_admin: true,
     })
     .select("id,company,reference")
@@ -86,7 +98,7 @@ export async function POST(request: Request) {
 
   if (error) {
     /* A database that has not had the migration run is the likely cause. */
-    const missingColumn = /assigned_to|added_by_admin/.test(error.message);
+    const missingColumn = /assigned_to|added_by_admin|marketer_id|discount_/.test(error.message);
     return NextResponse.json(
       {
         ok: false,
@@ -152,7 +164,10 @@ export async function POST(request: Request) {
   });
 }
 
-/** Hands a merchant to a member of your team, or takes them back. */
+/**
+ * Changes one thing about a merchant: who on the team looks after them, or
+ * the discount range they have agreed. Only the fields sent are touched.
+ */
 export async function PATCH(request: Request) {
   const guard = await guardApi("admin");
   if (!guard.ok) return guard.response;
@@ -165,32 +180,43 @@ export async function PATCH(request: Request) {
     );
   }
 
-  let id = "";
-  let assignedTo: string | null = null;
+  let body: Record<string, unknown>;
   try {
-    const body = (await request.json()) as Record<string, unknown>;
-    id = String(body.id ?? "");
-    const value = body.assignedTo;
-    assignedTo = typeof value === "string" && value ? value : null;
+    body = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ ok: false, message: "Bad request." }, { status: 400 });
   }
 
+  const id = String(body.id ?? "");
   if (!id) {
     return NextResponse.json({ ok: false, message: "Which merchant?" }, { status: 400 });
   }
 
-  const { error } = await db
-    .from("vendor_applications")
-    .update({ assigned_to: assignedTo })
-    .eq("id", id);
+  const patch: Record<string, unknown> = {};
+  if ("assignedTo" in body) {
+    const value = body.assignedTo;
+    patch.assigned_to = typeof value === "string" && value ? value : null;
+  }
+  if ("discountMin" in body || "discountMax" in body) {
+    const discount = parseDiscount(body.discountMin, body.discountMax);
+    if (!discount.ok) {
+      return NextResponse.json({ ok: false, message: discount.message }, { status: 422 });
+    }
+    patch.discount_min = discount.min;
+    patch.discount_max = discount.max;
+  }
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ ok: false, message: "Nothing to change." }, { status: 400 });
+  }
+
+  const { error } = await db.from("vendor_applications").update(patch).eq("id", id);
 
   if (error) {
     return NextResponse.json(
       {
         ok: false,
-        message: /assigned_to/.test(error.message)
-          ? "Run supabase/schema.sql in the Supabase SQL editor first — this needs the assigned_to column."
+        message: /assigned_to|discount_/.test(error.message)
+          ? "Run supabase/schema.sql in the Supabase SQL editor first — this needs the newest columns."
           : error.message,
       },
       { status: 500 },
@@ -199,7 +225,12 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    message: assignedTo ? "Assigned." : "Left unassigned.",
+    message:
+      "discount_min" in patch
+        ? "Discount saved."
+        : patch.assigned_to
+          ? "Assigned."
+          : "Left unassigned.",
   });
 }
 

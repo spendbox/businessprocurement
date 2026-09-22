@@ -10,7 +10,11 @@
  * Built on Web Crypto so the same code runs in middleware and in routes.
  */
 
-export type Purpose = "admin-session" | "portal-session" | "portal-login";
+export type Purpose =
+  | "admin-session"
+  | "portal-session"
+  | "portal-login"
+  | "agreement-sign";
 
 function b64urlEncode(bytes: Uint8Array): string {
   let binary = "";

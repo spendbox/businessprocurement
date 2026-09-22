@@ -169,6 +169,11 @@ export const manualVendorSchema = z.object({
   status: z.enum(["pending", "approved", "rejected", "paused"]).default("approved"),
   /** Who on your team looks after them. */
   assignedTo: z.string().uuid().optional().or(z.literal("")),
+  /** The marketer who works them. */
+  marketerId: z.string().uuid().optional().or(z.literal("")),
+  /** The agreed discount, as % off their normal price. Checked in the route. */
+  discountMin: z.union([z.number(), z.string()]).optional().nullable(),
+  discountMax: z.union([z.number(), z.string()]).optional().nullable(),
   /** Tell them they are set up. Off unless asked for. */
   sendWelcome: z.boolean().optional().default(false),
 });
@@ -179,7 +184,7 @@ export type ManualVendorInput = z.infer<typeof manualVendorSchema>;
  * Human-readable reference, e.g. SPB-4K2P-7QX or INV-9F3D-2HK.
  * Short enough to read over the phone, unique enough for our volumes.
  */
-export function makeReference(prefix: "SPB" | "VND" | "INV"): string {
+export function makeReference(prefix: "SPB" | "VND" | "INV" | "MOU"): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1
   const pick = (n: number) =>
     Array.from(

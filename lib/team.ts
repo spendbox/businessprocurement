@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getSupabase } from "./supabase";
-import { MIN_PASSWORD, ROLES, type Role } from "./roles";
+import { MIN_PASSWORD, ROLES, roleCanSignIn, type Role } from "./roles";
 
 export {
   ROLES,
@@ -9,6 +9,7 @@ export {
   COORDINATOR_HOME,
   MIN_PASSWORD,
   coordinatorMayVisit,
+  roleCanSignIn,
   roleNav,
   type Role,
 } from "./roles";
@@ -38,6 +39,8 @@ export type TeamMember = {
   password_hash: string | null;
   last_login_at: string | null;
   notes: string | null;
+  /** When a marketer's targets start counting. */
+  started_on?: string | null;
 };
 
 /** What the browser is allowed to know about a team member. */
@@ -47,7 +50,10 @@ export type TeamMemberView = Omit<TeamMember, "password_hash"> & {
 
 export const asView = (member: TeamMember): TeamMemberView => {
   const { password_hash, ...rest } = member;
-  return { ...rest, canSignIn: Boolean(password_hash) };
+  return {
+    ...rest,
+    canSignIn: Boolean(password_hash) && roleCanSignIn(member.role),
+  };
 };
 
 /* ------------------------------------------------------------------ */
@@ -134,15 +140,26 @@ const passwordRule = z
   .min(MIN_PASSWORD, `A password needs at least ${MIN_PASSWORD} characters`)
   .max(200);
 
-export const newMemberSchema = z.object({
-  name: z.string().trim().min(2, "Their name is needed").max(120),
-  email: z.string().trim().toLowerCase().email("A valid email address is needed"),
-  phone: z.string().trim().max(32).optional().or(z.literal("")),
-  role: z.enum(ROLES),
-  notes: z.string().trim().max(1000).optional().or(z.literal("")),
-  /** Leave blank for someone who only needs to be assigned work. */
-  password: passwordRule.optional().or(z.literal("")),
-});
+const isoDate = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use the date picker");
+
+export const newMemberSchema = z
+  .object({
+    name: z.string().trim().min(2, "Their name is needed").max(120),
+    email: z.string().trim().toLowerCase().email("A valid email address is needed"),
+    phone: z.string().trim().max(32).optional().or(z.literal("")),
+    role: z.enum(ROLES),
+    notes: z.string().trim().max(1000).optional().or(z.literal("")),
+    /** Leave blank for someone who only needs to be assigned work. */
+    password: passwordRule.optional().or(z.literal("")),
+    startedOn: isoDate.optional().or(z.literal("")),
+  })
+  .refine((m) => roleCanSignIn(m.role) || !m.password, {
+    message: "Marketers do not sign in, so they cannot have a password",
+    path: ["password"],
+  });
 
 export const updateMemberSchema = z.object({
   id: z.string().uuid(),
@@ -154,6 +171,8 @@ export const updateMemberSchema = z.object({
   password: passwordRule.optional().or(z.literal("")),
   /** Takes their sign-in away without deleting the person. */
   removePassword: z.boolean().optional(),
+  email: z.string().trim().toLowerCase().email("A valid email address is needed").optional(),
+  startedOn: isoDate.optional().or(z.literal("")),
 });
 
 /* ------------------------------------------------------------------ */
@@ -224,19 +243,30 @@ export async function noteSignIn(id: string): Promise<void> {
     .eq("id", id);
 }
 
-/** How many merchants each person looks after, keyed by member id. */
+/**
+ * How many merchants each person has, keyed by member id: the ones they
+ * look after, or for a marketer the ones they work.
+ */
 export async function vendorCounts(): Promise<Record<string, number>> {
   const client = getSupabase();
   if (!client) return {};
-  const { data, error } = await client
-    .from("vendor_applications")
-    .select("assigned_to")
-    .not("assigned_to", "is", null)
-    .limit(5000);
-  if (error) return {};
+
+  let rows: { assigned_to?: string | null; marketer_id?: string | null }[] = [];
+  const both = await client.from("vendor_applications").select("assigned_to,marketer_id").limit(5000);
+  if (!both.error) {
+    rows = both.data ?? [];
+  } else {
+    /* Before the marketer migration there is only the one column. */
+    const one = await client.from("vendor_applications").select("assigned_to").limit(5000);
+    if (one.error) return {};
+    rows = one.data ?? [];
+  }
+
   const counts: Record<string, number> = {};
-  for (const row of (data ?? []) as { assigned_to: string | null }[]) {
-    if (row.assigned_to) counts[row.assigned_to] = (counts[row.assigned_to] ?? 0) + 1;
+  for (const row of rows) {
+    for (const id of [row.assigned_to, row.marketer_id]) {
+      if (id) counts[id] = (counts[id] ?? 0) + 1;
+    }
   }
   return counts;
 }

@@ -30,7 +30,12 @@ export default async function NewVendorPage() {
         </p>
       </div>
 
-      <VendorEntry team={team.map((m) => ({ id: m.id, name: m.name }))} />
+      <VendorEntry
+        team={team.filter((m) => m.role !== "marketer").map((m) => ({ id: m.id, name: m.name }))}
+        marketers={team
+          .filter((m) => m.role === "marketer" && m.active)
+          .map((m) => ({ id: m.id, name: m.name }))}
+      />
     </div>
   );
 }

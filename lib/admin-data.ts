@@ -31,6 +31,8 @@ export type RequestRow = {
   internal_notes: string | null;
   /** Set when the request was filed away; null while it is live work. */
   archived_at: string | null;
+  /** The marketer who brought this business in. */
+  marketer_id?: string | null;
 };
 
 export type VendorRow = {
@@ -59,6 +61,11 @@ export type VendorRow = {
   assigned_to: string | null;
   /** True when an admin typed them in rather than them applying. */
   added_by_admin?: boolean | null;
+  /** The agreed discount range, as a percentage off their normal price. */
+  discount_min?: number | null;
+  discount_max?: number | null;
+  /** The marketer working this merchant. */
+  marketer_id?: string | null;
 };
 
 export const REQUEST_STATUSES = [

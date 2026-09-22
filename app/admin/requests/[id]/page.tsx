@@ -8,6 +8,7 @@ import {
   rankedVendors,
 } from "@/lib/admin-data";
 import { formatMoney, prettyDate } from "@/lib/invoices";
+import { discountLabel } from "@/lib/discount";
 import { ATTACHMENT_TIMING, urgencyLabel, URGENCIES } from "@/lib/catalog";
 import {
   InternalNotes,
@@ -20,6 +21,8 @@ import {
 import { InvoiceActions, InvoiceBuilder } from "../../InvoiceUI";
 import { NeedsDatabase } from "../../Empty";
 import { currentSession } from "@/lib/admin-guard";
+import { listTeamQuietly } from "@/lib/team";
+import { AttributeMarketer } from "../../vendors/VendorControls";
 import { isAdmin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
@@ -55,12 +58,14 @@ export default async function RequestDetail({
   let request;
   let vendors;
   let invoices;
+  let team;
   try {
     request = await getRequest(id);
     if (!request) notFound();
-    [vendors, invoices] = await Promise.all([
+    [vendors, invoices, team] = await Promise.all([
       rankedVendors(request),
       admin ? invoicesForRequest(request.id) : Promise.resolve([]),
+      listTeamQuietly(),
     ]);
   } catch (error) {
     if (error instanceof DataUnavailable) return <NeedsDatabase detail={error.message} />;
@@ -162,6 +167,7 @@ export default async function RequestDetail({
                 reasons: v.reasons,
                 gaps: v.gaps,
                 recommended: v.recommended,
+                discount: discountLabel(v.discount_min, v.discount_max),
               }))}
             />
           </Panel>
@@ -253,6 +259,16 @@ export default async function RequestDetail({
                 Call
               </a>
             </div>
+          </Panel>
+
+          <Panel title="Brought in by">
+            <AttributeMarketer
+              requestId={request.id}
+              value={request.marketer_id ?? ""}
+              marketers={team
+                .filter((m) => m.role === "marketer")
+                .map((m) => ({ id: m.id, name: m.active ? m.name : `${m.name} (switched off)` }))}
+            />
           </Panel>
 
           <Panel title="Internal notes">

@@ -12,6 +12,7 @@ import {
   findMemberByEmail,
   noteSignIn,
   passwordMatches,
+  roleCanSignIn,
 } from "@/lib/team";
 import { rateLimit, clientKey } from "@/lib/ratelimit";
 
@@ -62,7 +63,9 @@ export async function POST(request: Request) {
   if (credentialsMatch(email, password)) {
     token = await createSession(email.trim().toLowerCase(), { role: "admin" });
   } else {
-    const member = await findMemberByEmail(email);
+    const found = await findMemberByEmail(email);
+    /* A marketer never signs in, whatever might be sitting in the row. */
+    const member = found && roleCanSignIn(found.role) ? found : null;
     const passwordOk = await passwordMatches(password, member?.password_hash ?? null);
 
     if (member && member.active && passwordOk) {

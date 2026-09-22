@@ -3,6 +3,8 @@ import { Suspense } from "react";
 import { requireAdminPage } from "@/lib/admin-guard";
 import { DataUnavailable, VENDOR_STATUSES, listVendors } from "@/lib/admin-data";
 import { listTeamQuietly } from "@/lib/team";
+import { agreementStatusByVendor } from "@/lib/agreements";
+import { DiscountEditor, MarketerPicker } from "./VendorControls";
 import { CATEGORY_OPTIONS } from "@/lib/catalog";
 import { Filters } from "../Filters";
 import { AssignOwner, DeleteVendor, StatusSelect } from "../AdminUI";
@@ -30,7 +32,12 @@ export default async function VendorsPage({
     return Array.isArray(value) ? value[0] : value;
   };
 
-  const team = await listTeamQuietly();
+  const [everyone, agreements] = await Promise.all([listTeamQuietly(), agreementStatusByVendor()]);
+  /* Staff look after merchants; marketers work them. Two different lists. */
+  const team = everyone.filter((m) => m.role !== "marketer");
+  const marketers = everyone
+    .filter((m) => m.role === "marketer" && m.active)
+    .map((m) => ({ id: m.id, name: m.name }));
 
   let vendors;
   try {
@@ -59,12 +66,20 @@ export default async function VendorsPage({
             {" · approving one emails them straight away"}
           </p>
         </div>
-        <Link
-          href="/admin/vendors/new"
-          className="inline-flex min-h-[46px] shrink-0 items-center rounded-full bg-forest-500 px-5 text-[14.5px] font-bold text-white transition-colors hover:bg-forest-600"
-        >
-          Add a merchant
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/vendors/agreement-template"
+            className="inline-flex min-h-[46px] shrink-0 items-center rounded-full border-[1.5px] border-ink-900 px-4 text-[14px] font-bold text-ink-900 transition-colors hover:bg-ink-900 hover:text-bone-50"
+          >
+            Agreement template
+          </Link>
+          <Link
+            href="/admin/vendors/new"
+            className="inline-flex min-h-[46px] shrink-0 items-center rounded-full bg-forest-500 px-5 text-[14.5px] font-bold text-white transition-colors hover:bg-forest-600"
+          >
+            Add a merchant
+          </Link>
+        </div>
       </div>
 
       <Suspense fallback={null}>
@@ -130,12 +145,52 @@ export default async function VendorsPage({
                 {v.supply_description}
               </p>
 
-              <div className="mt-3.5 flex flex-wrap items-center gap-3 border-t border-bone-200 pt-3">
-                <AssignOwner
-                  vendorId={v.id}
-                  value={v.assigned_to ?? ""}
-                  team={team.map((m) => ({ id: m.id, name: m.name }))}
-                />
+              <div className="mt-3.5 flex flex-col gap-2.5 border-t border-bone-200 pt-3">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5">
+                  <DiscountEditor
+                    vendorId={v.id}
+                    min={v.discount_min ?? null}
+                    max={v.discount_max ?? null}
+                  />
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-[12px] font-bold uppercase tracking-[0.07em] text-ink-300">
+                      Agreement
+                    </span>
+                    {agreements[v.id] ? (
+                      <span
+                        className={`rounded-full border px-2.5 py-0.5 text-[11.5px] font-bold uppercase tracking-wide ${
+                          agreements[v.id].status === "signed"
+                            ? "border-forest-500 bg-forest-500 text-white"
+                            : agreements[v.id].status === "sent"
+                              ? "border-amber-400/40 bg-amber-400/15 text-amber-500"
+                              : "border-bone-300 bg-bone-200 text-ink-400"
+                        }`}
+                      >
+                        {agreements[v.id].status === "sent" ? "awaiting signature" : agreements[v.id].status}
+                      </span>
+                    ) : (
+                      <span className="text-[13px] text-ink-300">none yet</span>
+                    )}
+                    <Link
+                      href={`/admin/vendors/${v.id}/agreement`}
+                      className="text-[13px] font-bold text-forest-500 hover:text-forest-600"
+                    >
+                      {agreements[v.id]?.status === "signed" ? "View" : "Prepare and send"}
+                    </Link>
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5">
+                  <MarketerPicker
+                    vendorId={v.id}
+                    value={v.marketer_id ?? ""}
+                    marketers={marketers}
+                  />
+                  <AssignOwner
+                    vendorId={v.id}
+                    value={v.assigned_to ?? ""}
+                    team={team.map((m) => ({ id: m.id, name: m.name }))}
+                  />
+                </div>
               </div>
 
               <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 border-t border-bone-200 pt-3 text-[13px]">

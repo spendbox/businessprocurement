@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { SESSION_COOKIE, readSession } from "@/lib/admin-auth";
+import { guardApi } from "@/lib/admin-guard";
 import { getInvoice } from "@/lib/admin-data";
 import { invoiceDocument, invoiceFilename } from "@/lib/invoices";
 
@@ -17,10 +16,8 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await readSession((await cookies()).get(SESSION_COOKIE)?.value);
-  if (!session) {
-    return NextResponse.json({ ok: false, message: "Not signed in." }, { status: 401 });
-  }
+  const guard = await guardApi("admin");
+  if (!guard.ok) return guard.response;
 
   const { id } = await params;
 

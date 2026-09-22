@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { Suspense } from "react";
+import { requireAdminPage } from "@/lib/admin-guard";
 import { DataUnavailable, VENDOR_STATUSES, listVendors } from "@/lib/admin-data";
+import { listTeamQuietly } from "@/lib/team";
 import { CATEGORY_OPTIONS } from "@/lib/catalog";
 import { Filters } from "../Filters";
-import { DeleteVendor, StatusSelect } from "../AdminUI";
+import { AssignOwner, DeleteVendor, StatusSelect } from "../AdminUI";
 import { NeedsDatabase } from "../Empty";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +22,15 @@ export default async function VendorsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireAdminPage();
+
   const params = await searchParams;
   const one = (key: string) => {
     const value = params[key];
     return Array.isArray(value) ? value[0] : value;
   };
+
+  const team = await listTeamQuietly();
 
   let vendors;
   try {
@@ -41,15 +48,23 @@ export default async function VendorsPage({
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="font-display text-[30px] font-bold tracking-[-0.025em] text-ink-900">
-          Merchants
-        </h1>
-        <p className="mt-1 text-[14.5px] text-ink-400">
-          {vendors.length} shown
-          {pending > 0 && ` · ${pending} waiting on a decision`}
-          {" · approving one emails them straight away"}
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-[30px] font-bold tracking-[-0.025em] text-ink-900">
+            Merchants
+          </h1>
+          <p className="mt-1 text-[14.5px] text-ink-400">
+            {vendors.length} shown
+            {pending > 0 && ` · ${pending} waiting on a decision`}
+            {" · approving one emails them straight away"}
+          </p>
+        </div>
+        <Link
+          href="/admin/vendors/new"
+          className="inline-flex min-h-[46px] shrink-0 items-center rounded-full bg-forest-500 px-5 text-[14.5px] font-bold text-white transition-colors hover:bg-forest-600"
+        >
+          Add a merchant
+        </Link>
       </div>
 
       <Suspense fallback={null}>
@@ -82,6 +97,11 @@ export default async function VendorsPage({
                     <span className="font-mono text-[12px] text-ink-300">
                       {v.reference}
                     </span>
+                    {v.added_by_admin && (
+                      <span className="rounded-full border border-bone-300 bg-bone-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-ink-400">
+                        added by hand
+                      </span>
+                    )}
                   </p>
                   <p className="mt-1 text-[13.5px] text-ink-400">
                     {v.contact_name}
@@ -110,7 +130,15 @@ export default async function VendorsPage({
                 {v.supply_description}
               </p>
 
-              <dl className="mt-3.5 flex flex-wrap gap-x-6 gap-y-1.5 border-t border-bone-200 pt-3 text-[13px]">
+              <div className="mt-3.5 flex flex-wrap items-center gap-3 border-t border-bone-200 pt-3">
+                <AssignOwner
+                  vendorId={v.id}
+                  value={v.assigned_to ?? ""}
+                  team={team.map((m) => ({ id: m.id, name: m.name }))}
+                />
+              </div>
+
+              <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 border-t border-bone-200 pt-3 text-[13px]">
                 {[
                   ["Supplies", v.categories.join(", ")],
                   ["Delivers to", v.regions.join(", ")],

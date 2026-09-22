@@ -236,3 +236,54 @@ create index if not exists invoices_bill_to_email_idx
   on public.invoices (bill_to_email);
 
 alter table public.invoices enable row level security;
+
+-- ------------------------------------------------------------
+-- Your team
+--
+-- The people who work the dashboard. Two roles:
+--
+--   admin        sees and does everything, including the numbers
+--   coordinator  the sub-admin: works the requests and sends them
+--                out to merchants, and sees no statistics at all
+--
+-- A member with a password can sign in; one without is only a
+-- name to hang work on. The owner account in ADMIN_EMAIL /
+-- ADMIN_PASSWORD always works and is not in this table, so a
+-- mistake here can never lock you out of your own dashboard.
+-- ------------------------------------------------------------
+create table if not exists public.team_members (
+  id             uuid primary key default gen_random_uuid(),
+  created_at     timestamptz not null default now(),
+
+  name           text not null,
+  email          text not null unique,
+  phone          text,
+
+  role           text not null default 'coordinator'
+                   check (role in ('admin','coordinator')),
+  active         boolean not null default true,
+
+  -- PBKDF2-SHA256, salted. Null means this person cannot sign in.
+  password_hash  text,
+  last_login_at  timestamptz,
+
+  notes          text
+);
+
+create index if not exists team_members_email_idx on public.team_members (email);
+create index if not exists team_members_role_idx  on public.team_members (role);
+
+alter table public.team_members enable row level security;
+
+-- Who looks after each merchant.
+alter table public.vendor_applications
+  add column if not exists assigned_to uuid
+    references public.team_members (id) on delete set null;
+
+create index if not exists vendor_applications_assigned_to_idx
+  on public.vendor_applications (assigned_to);
+
+-- Merchants added by hand in the dashboard are marked, so it is
+-- always clear who applied and who was entered for them.
+alter table public.vendor_applications
+  add column if not exists added_by_admin boolean not null default false;

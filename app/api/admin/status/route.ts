@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { SESSION_COOKIE, readSession } from "@/lib/admin-auth";
+import { guardApi } from "@/lib/admin-guard";
+import { isAdmin } from "@/lib/admin-auth";
 import { getSupabase } from "@/lib/supabase";
 import { REQUEST_STATUSES, VENDOR_STATUSES, type VendorRow } from "@/lib/admin-data";
 import { INVOICE_STATUSES } from "@/lib/invoices";
@@ -51,18 +51,8 @@ async function sendApprovalEmail(vendor: VendorRow) {
 
 /** Moves a request, a merchant or an invoice along your workflow. */
 export async function POST(request: Request) {
-  const session = await readSession((await cookies()).get(SESSION_COOKIE)?.value);
-  if (!session) {
-    return NextResponse.json({ ok: false, message: "Not signed in." }, { status: 401 });
-  }
-
-  const db = getSupabase();
-  if (!db) {
-    return NextResponse.json(
-      { ok: false, message: "Supabase is not configured." },
-      { status: 503 },
-    );
-  }
+  const guard = await guardApi("signed-in");
+  if (!guard.ok) return guard.response;
 
   let kind = "";
   let id = "";
@@ -88,6 +78,22 @@ export async function POST(request: Request) {
           : null;
   if (!table || !id) {
     return NextResponse.json({ ok: false, message: "Bad request." }, { status: 400 });
+  }
+
+  /* A coordinator works requests. Merchants and invoices are not theirs. */
+  if (kind !== "request" && !isAdmin(guard.session)) {
+    return NextResponse.json(
+      { ok: false, message: "Your account can only change requests. Ask an admin." },
+      { status: 403 },
+    );
+  }
+
+  const db = getSupabase();
+  if (!db) {
+    return NextResponse.json(
+      { ok: false, message: "Supabase is not configured." },
+      { status: 503 },
+    );
   }
 
   const allowed: readonly string[] =

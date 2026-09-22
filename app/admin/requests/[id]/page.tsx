@@ -19,6 +19,8 @@ import {
 } from "../../AdminUI";
 import { InvoiceActions, InvoiceBuilder } from "../../InvoiceUI";
 import { NeedsDatabase } from "../../Empty";
+import { currentSession } from "@/lib/admin-guard";
+import { isAdmin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +48,10 @@ export default async function RequestDetail({
 }) {
   const { id } = await params;
 
+  /* An invoice carries prices, so a coordinator does not get that panel. */
+  const session = await currentSession();
+  const admin = isAdmin(session);
+
   let request;
   let vendors;
   let invoices;
@@ -54,7 +60,7 @@ export default async function RequestDetail({
     if (!request) notFound();
     [vendors, invoices] = await Promise.all([
       rankedVendors(request),
-      invoicesForRequest(request.id),
+      admin ? invoicesForRequest(request.id) : Promise.resolve([]),
     ]);
   } catch (error) {
     if (error instanceof DataUnavailable) return <NeedsDatabase detail={error.message} />;
@@ -160,6 +166,7 @@ export default async function RequestDetail({
             />
           </Panel>
 
+          {admin && (
           <Panel
             title="Invoice this business"
             action={
@@ -216,6 +223,7 @@ export default async function RequestDetail({
               }}
             />
           </Panel>
+          )}
         </div>
 
         <div className="flex flex-col gap-6">

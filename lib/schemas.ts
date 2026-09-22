@@ -128,6 +128,54 @@ export const vendorSchema = z.object({
 export type VendorInput = z.infer<typeof vendorSchema>;
 
 /**
+ * A merchant typed in by an admin rather than one who applied.
+ *
+ * Looser than the public form on purpose: the person entering it is on the
+ * phone to the supplier and may not have their RC number or their monthly
+ * capacity to hand. What cannot be guessed — who they are, what they supply
+ * and where they deliver — is still required, because a merchant missing
+ * those can never be matched to a request.
+ */
+export const manualVendorSchema = z.object({
+  company: trimmed(2, 140, "Company name"),
+  rcNumber: optionalText(40),
+  website: optionalText(200),
+  yearsTrading: z.enum(BUSINESS_AGE, { message: "How long have they traded?" }),
+
+  categories: z
+    .array(z.string().trim().min(1).max(60))
+    .min(1, "Pick at least one category they supply")
+    .max(12, "Pick their strongest categories"),
+  supplyDescription: trimmed(5, 1500, "What they supply"),
+  moq: optionalText(160),
+  monthlyCapacity: optionalText(160),
+  fulfilmentSpeed: z.enum(FULFILMENT_SPEEDS, { message: "How fast can they fulfil?" }),
+
+  regions: z
+    .array(z.enum(COVERAGE_AREAS as [string, ...string[]]))
+    .min(1, "Where can they deliver?")
+    .max(COVERAGE_AREAS.length),
+  ownLogistics: z.boolean().optional(),
+  paymentTerms: z.enum(PAYMENT_TERMS, { message: "Pick their payment terms" }),
+
+  contactName: trimmed(2, 120, "Contact name"),
+  role: optionalText(120),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+  phone,
+  notes: optionalText(1200),
+  internalNotes: optionalText(2000),
+
+  /** Added by hand usually means already trusted, so this defaults to approved. */
+  status: z.enum(["pending", "approved", "rejected", "paused"]).default("approved"),
+  /** Who on your team looks after them. */
+  assignedTo: z.string().uuid().optional().or(z.literal("")),
+  /** Tell them they are set up. Off unless asked for. */
+  sendWelcome: z.boolean().optional().default(false),
+});
+
+export type ManualVendorInput = z.infer<typeof manualVendorSchema>;
+
+/**
  * Human-readable reference, e.g. SPB-4K2P-7QX or INV-9F3D-2HK.
  * Short enough to read over the phone, unique enough for our volumes.
  */

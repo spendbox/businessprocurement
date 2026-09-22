@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireAdminPage } from "@/lib/admin-guard";
 import { DataUnavailable, getStats, listRequests } from "@/lib/admin-data";
 import { URGENCIES } from "@/lib/catalog";
 import { BarList, DailyColumns, StatTile } from "./Charts";
@@ -31,6 +32,9 @@ function initials(company: string): string {
 }
 
 export default async function OverviewPage() {
+  /* The numbers live here, so only an admin gets this far. */
+  await requireAdminPage();
+
   let stats;
   let recent;
   try {

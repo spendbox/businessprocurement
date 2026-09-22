@@ -55,6 +55,10 @@ export type VendorRow = {
   phone: string;
   notes: string | null;
   status: string;
+  /** The team member who looks after them, if anyone does. */
+  assigned_to: string | null;
+  /** True when an admin typed them in rather than them applying. */
+  added_by_admin?: boolean | null;
 };
 
 export const REQUEST_STATUSES = [

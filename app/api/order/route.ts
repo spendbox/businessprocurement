@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { orderSchema, makeReference, fieldErrors } from "@/lib/schemas";
 import { urgencyLabel, URGENCIES } from "@/lib/catalog";
-import { acceptable, humanSize } from "@/lib/attachments";
+import { acceptable, humanSize, MAX_TOTAL_BYTES } from "@/lib/attachments";
 import { layout, rows, textVersion, type Row } from "@/lib/email";
 import { sendInternal, sendToCustomer, emailConfigured } from "@/lib/resend";
 import { saveRow, dbConfigured } from "@/lib/supabase";
@@ -10,6 +10,9 @@ import { rateLimit, clientKey } from "@/lib/ratelimit";
 export const runtime = "nodejs";
 
 const siteUrl = () => process.env.NEXT_PUBLIC_SITE_URL ?? "https://spendbox.site";
+
+/** The files at their base64 weight, plus generous room for the form text. */
+const MAX_BODY_BYTES = Math.ceil(MAX_TOTAL_BYTES * 1.4) + 256 * 1024;
 
 export async function POST(request: Request) {
   const limit = rateLimit(`order:${clientKey(request)}`);
@@ -22,6 +25,25 @@ export async function POST(request: Request) {
         )} minutes, or email us directly.`,
       },
       { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    );
+  }
+
+  /*
+   * Size is checked from the header before the body is read, so an
+   * oversized upload is turned away in one round trip instead of being
+   * buffered into memory first. The browser refuses these already; this
+   * catches anything that did not come from our own form.
+   */
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (declared > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `That request is ${humanSize(declared)} once the files are packed up, which is more than we can accept. Keep attachments under ${humanSize(
+          MAX_TOTAL_BYTES,
+        )} in total, or send a link instead.`,
+      },
+      { status: 413 },
     );
   }
 

@@ -44,7 +44,14 @@ instead of also having them in a table.
 1. Sign up at [supabase.com](https://supabase.com) and create a project.
 2. Open **SQL Editor** → **New query**.
 3. Open the file `supabase/schema.sql` in this project, copy everything in it,
-   paste it in, and press **Run**. This creates the two tables.
+   paste it in, and press **Run**. This creates the tables — requests,
+   merchant applications and invoices.
+
+   **If you already had a database before invoices and the archive existed,
+   run this same file again.** It is written to be safe on a database with
+   data in it: it only adds what is missing, and touches nothing that is
+   already there. Until you do, the Invoices page will tell you so and the
+   rest of the dashboard carries on working.
 4. Go to **Project Settings** → **API** and copy two things:
    - the **Project URL**
    - the **`service_role`** key (the secret one, not `anon`)
@@ -139,8 +146,17 @@ top and the local pass fills any blank it leaves. Everything read is shown on
 the review screen and can be corrected there — and the raw message always
 reaches the sourcing team intact, whatever the reading made of it.
 
-Attachments (up to 5 files, 8MB each) ride along on the internal email, so
-the team opens the real file. No storage bucket to configure.
+Attachments ride along on the internal email, so the team opens the real
+file. No storage bucket to configure.
+
+**The limit is 5MB per file and 5MB per request, across at most five files.**
+Every file is measured in the browser *before* it is read, so an oversized
+one is refused the instant it is picked — with a sentence saying what is
+wrong with it — rather than after a long upload that fails at the end. A
+running bar shows how much of the 5MB is gone. The server checks the size of
+the whole request from its header before reading a byte of it, and refuses
+anything over the limit outright, so the same rule holds for anything that
+did not come from our own form.
 
 ---
 
@@ -217,9 +233,16 @@ build; everyone signed in is signed out the moment you change the secret.
 - **Overview** — open requests, how many are urgent, intake over the last
   fourteen days, most-requested categories, and which categories have *no*
   approved merchant (a request in one of those has nobody to send it to).
-- **Requests** — search and filter by status, urgency or category. Open one to
-  see everything the buyer submitted, move it through `new → sourcing → quoted
-  → won / lost`, keep internal notes, and email or call the buyer.
+- **Requests** — search and filter by status, urgency or category, across three
+  views: the **working list** (the default), the **archive**, and everything at
+  once. Open one to see what the buyer submitted, move it through
+  `new → sourcing → quoted → won / lost`, keep internal notes, and email or
+  call the buyer.
+- **Cancelling archives it.** Setting a request to `cancelled` files it away:
+  it leaves the working list and appears under *Archive*, still fully
+  readable. Putting it back on any other status brings it straight back. The
+  overview links to the archive whenever anything is in it. Nothing is ever
+  deleted.
 - **Send to merchants** — on a request, every approved merchant is scored
   against it and the best matches are listed first, pre-ticked. Each one shows
   *why*: green chips for what fits ("Supplies 2 of 2 categories", "Covers
@@ -237,6 +260,23 @@ build; everyone signed in is signed out the moment you change the secret.
 - **Merchants** — every application, with search and filters, and a dropdown to
   move each between `pending → approved / rejected / paused`. Only *approved*
   merchants are ever offered as recipients.
+- **Approving one emails them.** The moment a merchant is set to `approved`
+  they get a letter telling them they are on, what we have on file for them,
+  and how quoting works. It goes out once, on the move *into* approved, so
+  nobody is emailed twice. If Resend is not configured, or the send fails, the
+  dashboard says so next to the dropdown instead of pretending.
+- **Deleting a merchant** removes the application for good — for duplicates,
+  test rows, or a company that asked to come off. It takes two clicks: the
+  button turns into a plain question naming the company first, because there
+  is no undo.
+- **Invoices** — raise an invoice from a request (it carries the request
+  reference and prefills the buyer) or on its own from the Invoices page. Add
+  lines, a VAT rate and a delivery charge, and the total updates as you type.
+  Then either **email it to the business** — the invoice is in the body and
+  attached as a document — or **download it**. Opening one shows a *Print or
+  save as PDF* button, which is how you get a PDF on any machine. Each invoice
+  moves through `draft → sent → paid / void`, and the page totals up what is
+  still outstanding.
 - **Diagnostics** — what this deployment can see, and a live test email. The
   first place to look when mail goes quiet.
 
@@ -340,8 +380,10 @@ app/
   api/order/route.ts  receives buyer requests, saves and emails them
   api/vendor/route.ts receives vendor applications, saves and emails them
   api/classify/route.ts suggests categories from what the buyer typed
-  admin/             the dashboard (sign-in, overview, requests, merchants)
-  api/admin/         sign in and out, change a status, email merchants
+  admin/             the dashboard (sign-in, overview, requests, merchants,
+                     invoices)
+  api/admin/         sign in and out, change a status, email merchants,
+                     delete a merchant, raise and send invoices
 
 components/
   Shell.tsx        holds the "which form is open" state for the whole page
@@ -367,6 +409,8 @@ lib/
   supabase.ts    saving
   admin-auth.ts  the dashboard login
   admin-data.ts  the dashboard's database queries
+  invoices.ts    invoice maths, validation and the printable document
+  attachments.ts what may be attached, and how big it may be
   ratelimit.ts   stops one person spamming the form
   useVisualViewport.ts  keeps forms above the phone keyboard
 

@@ -8,13 +8,16 @@ import { z } from "zod";
  * rather than a description of one. No storage bucket to configure, and
  * nothing to clean up later.
  *
- * Limits are deliberately tight: Resend caps a message at 40MB, and a
- * purchase order that will not fit in 8MB is not a purchase order.
+ * Limits are deliberately tight: base64 inflates a file by a third on the
+ * way up, Resend caps a message at 40MB, and a purchase order that will not
+ * fit in 5MB is not a purchase order. Everything is measured in the browser
+ * before a single byte is read, so an oversized file is refused on the spot
+ * rather than after a long upload.
  */
 
 export const MAX_FILES = 5;
-export const MAX_FILE_BYTES = 8 * 1024 * 1024;
-export const MAX_TOTAL_BYTES = 15 * 1024 * 1024;
+export const MAX_FILE_BYTES = 5 * 1024 * 1024;
+export const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
 
 /** What a buyer would actually send. Anything executable is refused. */
 export const ALLOWED_EXTENSIONS = [
@@ -52,6 +55,33 @@ export function humanSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Bytes already picked, so the next file can be checked against the budget. */
+export const totalBytes = (files: { size: number }[]): number =>
+  files.reduce((sum, f) => sum + f.size, 0);
+
+/** Roughly what the JSON body weighs once base64 has inflated the files. */
+export const encodedBytes = (files: { size: number }[]): number =>
+  Math.ceil(totalBytes(files) * 1.37);
+
+/**
+ * The one place that decides whether a file may be attached. The browser
+ * asks before reading the file, and the server asks again before emailing,
+ * so the same sentence explains the refusal in both places.
+ */
+export function refusalReason(
+  file: { name: string; size: number },
+  already: { count: number; bytes: number },
+): string | null {
+  if (already.count >= MAX_FILES) return `only ${MAX_FILES} files can be attached`;
+  if (!isAllowed(file.name)) return "that file type is not accepted";
+  if (file.size === 0) return "the file is empty";
+  if (file.size > MAX_FILE_BYTES)
+    return `it is ${humanSize(file.size)} — the limit is ${humanSize(MAX_FILE_BYTES)}`;
+  if (already.bytes + file.size > MAX_TOTAL_BYTES)
+    return `it would take the request over ${humanSize(MAX_TOTAL_BYTES)} in total`;
+  return null;
+}
+
 /**
  * Drops anything oversized or of a type we do not accept, and reports what
  * went. A bad file must never cost the buyer their whole request.
@@ -64,17 +94,10 @@ export function acceptable(files: Attachment[]): {
   const rejected: { name: string; why: string }[] = [];
   let total = 0;
 
-  for (const file of files.slice(0, MAX_FILES)) {
-    if (!isAllowed(file.name)) {
-      rejected.push({ name: file.name, why: "file type not accepted" });
-      continue;
-    }
-    if (file.size > MAX_FILE_BYTES) {
-      rejected.push({ name: file.name, why: `over ${humanSize(MAX_FILE_BYTES)}` });
-      continue;
-    }
-    if (total + file.size > MAX_TOTAL_BYTES) {
-      rejected.push({ name: file.name, why: "would exceed the total size limit" });
+  for (const file of files) {
+    const why = refusalReason(file, { count: keep.length, bytes: total });
+    if (why) {
+      rejected.push({ name: file.name, why });
       continue;
     }
     total += file.size;

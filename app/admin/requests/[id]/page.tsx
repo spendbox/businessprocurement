@@ -4,16 +4,20 @@ import {
   DataUnavailable,
   REQUEST_STATUSES,
   getRequest,
+  invoicesForRequest,
   rankedVendors,
 } from "@/lib/admin-data";
+import { formatMoney, prettyDate } from "@/lib/invoices";
 import { ATTACHMENT_TIMING, urgencyLabel, URGENCIES } from "@/lib/catalog";
 import {
   InternalNotes,
   Panel,
   SendToMerchants,
+  StatusChip,
   StatusSelect,
   UrgencyChip,
 } from "../../AdminUI";
+import { InvoiceActions, InvoiceBuilder } from "../../InvoiceUI";
 import { NeedsDatabase } from "../../Empty";
 
 export const dynamic = "force-dynamic";
@@ -44,10 +48,14 @@ export default async function RequestDetail({
 
   let request;
   let vendors;
+  let invoices;
   try {
     request = await getRequest(id);
     if (!request) notFound();
-    vendors = await rankedVendors(request);
+    [vendors, invoices] = await Promise.all([
+      rankedVendors(request),
+      invoicesForRequest(request.id),
+    ]);
   } catch (error) {
     if (error instanceof DataUnavailable) return <NeedsDatabase detail={error.message} />;
     throw error;
@@ -96,6 +104,15 @@ export default async function RequestDetail({
         </div>
       </div>
 
+      {request.archived_at && (
+        <p className="rounded-2xl border border-bone-300 bg-bone-200/60 px-4 py-3 text-[14px] leading-relaxed text-ink-600">
+          <span className="font-bold text-ink-800">Archived.</span> This request
+          was cancelled on {new Date(request.archived_at).toLocaleDateString("en-GB")} and
+          sits in the archive. Putting it back on any other status brings it
+          into the working list again.
+        </p>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
         <div className="flex flex-col gap-6">
           <Panel title="The request">
@@ -140,6 +157,63 @@ export default async function RequestDetail({
                 gaps: v.gaps,
                 recommended: v.recommended,
               }))}
+            />
+          </Panel>
+
+          <Panel
+            title="Invoice this business"
+            action={
+              <Link
+                href="/admin/invoices"
+                className="text-[13.5px] font-bold text-forest-500 hover:text-forest-600"
+              >
+                All invoices
+              </Link>
+            }
+          >
+            {invoices.length > 0 && (
+              <ul className="mb-5 flex flex-col gap-2.5 border-b border-bone-200 pb-5">
+                {invoices.map((invoice) => (
+                  <li
+                    key={invoice.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-bone-200 bg-bone-50 px-3.5 py-3"
+                  >
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[13px] font-bold text-ink-900">
+                          {invoice.reference}
+                        </span>
+                        <StatusChip status={invoice.status} />
+                      </span>
+                      <span className="mt-1 block text-[13px] text-ink-400">
+                        {formatMoney(invoice.total, invoice.currency)} ·{" "}
+                        {invoice.due_date
+                          ? `due ${prettyDate(invoice.due_date)}`
+                          : "due on receipt"}
+                      </span>
+                    </span>
+                    <InvoiceActions
+                      id={invoice.id}
+                      email={invoice.bill_to_email}
+                      sent={Boolean(invoice.sent_at)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <InvoiceBuilder
+              billTo={{
+                id: request.id,
+                company: request.company,
+                contactName: request.contact_name,
+                email: request.email,
+                address: [request.address, request.city, request.region]
+                  .filter(Boolean)
+                  .join(", "),
+                reference: request.reference,
+                suggestion: request.need,
+              }}
             />
           </Panel>
         </div>

@@ -5,8 +5,10 @@ import {
   ALLOWED_EXTENSIONS,
   MAX_FILES,
   MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
   humanSize,
-  isAllowed,
+  refusalReason,
+  totalBytes,
 } from "@/lib/attachments";
 import { Close, Paperclip } from "./Icons";
 
@@ -33,27 +35,33 @@ export function FileDrop({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [refused, setRefused] = useState<{ name: string; why: string }[]>([]);
+
+  const used = totalBytes(files);
+  const left = Math.max(0, MAX_TOTAL_BYTES - used);
+  const full = files.length >= MAX_FILES || left === 0;
 
   const add = async (list: FileList | null) => {
     if (!list || list.length === 0) return;
     setBusy(true);
-    setProblem(null);
+    setRefused([]);
 
     const next = [...files];
-    const refused: string[] = [];
+    const turnedAway: { name: string; why: string }[] = [];
 
     for (const file of Array.from(list)) {
-      if (next.length >= MAX_FILES) {
-        refused.push(`${file.name} (only ${MAX_FILES} files)`);
-        continue;
-      }
-      if (!isAllowed(file.name)) {
-        refused.push(`${file.name} (type not accepted)`);
-        continue;
-      }
-      if (file.size > MAX_FILE_BYTES) {
-        refused.push(`${file.name} (over ${humanSize(MAX_FILE_BYTES)})`);
+      /*
+       * Checked against the file's size BEFORE it is read. Reading a
+       * 40MB spreadsheet into memory only to refuse it wastes the
+       * buyer's time and, on a phone, sometimes the whole tab.
+       */
+      const why = refusalReason(file, {
+        count: next.length,
+        bytes: totalBytes(next),
+      });
+      if (why) {
+        turnedAway.push({ name: file.name, why });
         continue;
       }
       try {
@@ -64,12 +72,12 @@ export function FileDrop({
           data: await readAsBase64(file),
         });
       } catch {
-        refused.push(`${file.name} (could not be read)`);
+        turnedAway.push({ name: file.name, why: "it could not be read" });
       }
     }
 
     onChange(next);
-    if (refused.length > 0) setProblem(`Not attached: ${refused.join(", ")}`);
+    setRefused(turnedAway);
     setBusy(false);
     if (input.current) input.current.value = "";
   };
@@ -102,7 +110,10 @@ export function FileDrop({
               </span>
               <button
                 type="button"
-                onClick={() => onChange(files.filter((_, n) => n !== i))}
+                onClick={() => {
+                  setRefused([]);
+                  onChange(files.filter((_, n) => n !== i));
+                }}
                 aria-label={`Remove ${f.name}`}
                 className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-300 transition-colors hover:bg-bone-200 hover:text-ink-800"
               >
@@ -113,29 +124,78 @@ export function FileDrop({
         </ul>
       )}
 
-      {files.length < MAX_FILES && (
+      {!full && (
         <label
           htmlFor="request-files"
-          className="flex min-h-[52px] cursor-pointer items-center justify-center gap-2.5 rounded-2xl border-[1.5px] border-dashed border-bone-300 bg-bone-50 px-4 text-[14.5px] font-semibold text-ink-500 transition-colors hover:border-forest-500 hover:bg-forest-50 hover:text-ink-800"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            void add(e.dataTransfer.files);
+          }}
+          className={`flex min-h-[52px] cursor-pointer items-center justify-center gap-2.5 rounded-2xl border-[1.5px] border-dashed px-4 text-[14.5px] font-semibold transition-colors ${
+            dragging
+              ? "border-forest-500 bg-forest-50 text-ink-800"
+              : "border-bone-300 bg-bone-50 text-ink-500 hover:border-forest-500 hover:bg-forest-50 hover:text-ink-800"
+          }`}
         >
           <Paperclip className="h-[18px] w-[18px]" />
           {busy
-            ? "Reading…"
+            ? "Checking…"
             : files.length === 0
               ? "Attach a purchase order or spreadsheet"
               : "Attach another"}
         </label>
       )}
 
+      {/* How much of the budget is gone, so nobody is surprised by a refusal. */}
+      {files.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="h-1.5 w-full overflow-hidden rounded-full bg-bone-200">
+            <span
+              className={`block h-full rounded-full transition-[width] duration-300 ${
+                used > MAX_TOTAL_BYTES * 0.9 ? "bg-amber-400" : "bg-forest-500"
+              }`}
+              style={{ width: `${Math.min(100, (used / MAX_TOTAL_BYTES) * 100)}%` }}
+            />
+          </span>
+          <p className="text-[12.5px] text-ink-400" aria-live="polite">
+            {humanSize(used)} of {humanSize(MAX_TOTAL_BYTES)} used
+            {full
+              ? " — that is the limit."
+              : ` · ${humanSize(left)} still free`}
+          </p>
+        </div>
+      )}
+
       <p className="text-[12.5px] leading-snug text-ink-300">
-        PDF, Word, Excel, CSV or photos. Up to {MAX_FILES} files,{" "}
-        {humanSize(MAX_FILE_BYTES)} each.
+        PDF, Word, Excel, CSV or photos. Up to {MAX_FILES} files and{" "}
+        {humanSize(MAX_FILE_BYTES)} per file, {humanSize(MAX_TOTAL_BYTES)} in
+        total. Anything bigger is best sent as a link in your message.
       </p>
 
-      {problem && (
-        <p role="alert" className="text-[13px] font-semibold text-clay-400">
-          {problem}
-        </p>
+      {refused.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-xl border-[1.5px] border-clay-400/40 bg-clay-400/10 px-3.5 py-3"
+        >
+          <p className="text-[13px] font-bold text-clay-400">
+            {refused.length === 1
+              ? "One file was not attached"
+              : `${refused.length} files were not attached`}
+          </p>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {refused.map((r, i) => (
+              <li key={`${r.name}-${i}`} className="text-[13px] leading-snug text-ink-600">
+                <span className="font-semibold">{r.name}</span> — {r.why}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

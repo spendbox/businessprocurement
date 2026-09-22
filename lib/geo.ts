@@ -185,6 +185,7 @@ export const NIGERIA_STATES: Record<string, string[]> = {
   Yobe: ["Damaturu", "Potiskum", "Gashua", "Nguru", "Geidam", "Buni Yadi"],
   Zamfara: ["Gusau", "Kaura Namoda", "Talata Mafara", "Anka", "Bungudu"],
   "Federal Capital Territory": [
+    "Abuja",
     "Abuja (Central)",
     "Garki",
     "Wuse",

@@ -5,6 +5,7 @@ import { layout, textVersion } from "@/lib/email";
 import { sendToCustomer, emailConfigured } from "@/lib/resend";
 import { getSupabase } from "@/lib/supabase";
 import { rateLimit, clientKey } from "@/lib/ratelimit";
+import { portalEnabled } from "@/lib/features";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,10 @@ const schema = z.object({ email: z.string().trim().toLowerCase().email() });
  * which businesses we work with.
  */
 export async function POST(request: Request) {
+  if (!portalEnabled()) {
+    return NextResponse.json({ ok: false, message: "Not available." }, { status: 404 });
+  }
+
   const limit = rateLimit(`portal-login:${clientKey(request)}`, 6, 15 * 60 * 1000);
   const sameForEveryone = NextResponse.json({
     ok: true,

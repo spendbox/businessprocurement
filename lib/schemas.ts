@@ -7,6 +7,7 @@ import {
   URGENCIES,
 } from "./catalog";
 import { COVERAGE_AREAS } from "./geo";
+import { attachmentsSchema } from "./attachments";
 
 const urgencyValues = URGENCIES.map((u) => u.value) as [string, ...string[]];
 
@@ -36,88 +37,56 @@ const phone = z
 const honeypot = z.string().max(200).optional();
 
 const orderObject = z.object({
-  // Step 1 — the need
-  need: trimmed(10, 2000, "Your request"),
+  /*
+   * The request as the buyer wrote it. This is the source of truth: the
+   * structured fields below are read out of it, shown back for correction,
+   * and may be blank if nothing could be found. The raw words always reach
+   * the sourcing team intact.
+   */
+  need: trimmed(15, 4000, "Your request"),
+
+  /** Worked out from the text, correctable on the review screen. */
   categories: z
     .array(z.string().trim().min(1).max(60))
-    .min(1, "Pick at least one category")
-    .max(12, "That is a lot of categories — split into two requests"),
+    .max(12)
+    .optional()
+    .default([]),
   quantity: optionalText(160),
+  budget: z.enum(BUDGET_BANDS).optional().or(z.literal("")),
 
-  // Do they have a purchase order or spreadsheet, and when is it coming?
-  hasAttachment: z.boolean({ message: "Let us know either way" }),
-  attachmentTiming: z.enum(["now", "later"]).optional().or(z.literal("")),
-  attachmentNote: optionalText(400),
-
-  // Step 2 — delivery and urgency
+  /** Asked as its own step — it changes how the request is worked. */
   urgency: z.enum(urgencyValues, { message: "Tell us how soon you need it" }),
-  hasDeadline: z.boolean({ message: "Let us know either way" }),
   neededBy: z
     .string()
     .trim()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Use the date picker")
     .optional()
     .or(z.literal("")),
+
+  /** Prefilled from the text; confirmed in one step. */
   country: trimmed(2, 80, "Country"),
   region: trimmed(2, 80, "State or region"),
-  city: trimmed(2, 80, "Delivery city"),
+  city: optionalText(80),
   address: optionalText(300),
 
-  // Step 3 — who you are
+  /** Who is asking. */
   company: trimmed(2, 140, "Business name"),
   contactName: trimmed(2, 120, "Your name"),
   email: z.string().trim().toLowerCase().email("Enter a valid email address"),
   phone,
-  budget: z.enum(BUDGET_BANDS).optional().or(z.literal("")),
   recurring: z.boolean().optional(),
-  notes: optionalText(1200),
+
+  /** Files attached to the request, forwarded onto the internal email. */
+  attachments: attachmentsSchema,
 
   honeypot,
 });
 
-/**
- * "Yes" answers have to be followed through: saying you have a purchase
- * order means telling us when it is coming, and saying there is a hard
- * deadline means giving us the date.
- */
-export const orderSchema = orderObject
-  .refine((v) => !v.hasAttachment || Boolean(v.attachmentTiming), {
-    message: "Are you sending it now or later?",
-    path: ["attachmentTiming"],
-  })
-  .refine((v) => !v.hasDeadline || Boolean(v.neededBy), {
-    message: "Pick the date it has to be there by",
-    path: ["neededBy"],
-  });
-
+export const orderSchema = orderObject;
 export type OrderInput = z.infer<typeof orderSchema>;
 
-/**
- * The bare object, without the cross-field rules.
- *
- * Zod skips `.refine` checks when the base object fails, which is no use
- * for validating one step at a time — the step you are on is usually the
- * only part that is complete. The form parses against this and applies the
- * conditional rules below itself.
- */
+/** The bare object, for validating one step at a time. */
 export const orderFields = orderObject;
-
-/** The "yes implies a follow-up answer" rules, checkable on their own. */
-export function conditionalOrderErrors(draft: {
-  hasAttachment?: boolean | null;
-  attachmentTiming?: string;
-  hasDeadline?: boolean | null;
-  neededBy?: string;
-}): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (draft.hasAttachment === true && !draft.attachmentTiming) {
-    out.attachmentTiming = "Are you sending it now or later?";
-  }
-  if (draft.hasDeadline === true && !draft.neededBy) {
-    out.neededBy = "Pick the date it has to be there by";
-  }
-  return out;
-}
 
 export const vendorSchema = z.object({
   // Step 1 — the company

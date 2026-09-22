@@ -538,12 +538,6 @@ export function Footer() {
           >
             For vendors
           </button>
-          <a
-            href="/portal/login"
-            className="font-semibold text-ink-500 transition-colors hover:text-ink-900"
-          >
-            Sign in
-          </a>
           <button
             type="button"
             onClick={() => openOrder()}

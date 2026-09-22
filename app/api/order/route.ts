@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { orderSchema, makeReference, fieldErrors } from "@/lib/schemas";
-import { ATTACHMENT_TIMING, urgencyLabel, URGENCIES } from "@/lib/catalog";
+import { urgencyLabel, URGENCIES } from "@/lib/catalog";
+import { acceptable, humanSize } from "@/lib/attachments";
 import { layout, rows, textVersion, type Row } from "@/lib/email";
 import { sendInternal, sendToCustomer, emailConfigured } from "@/lib/resend";
 import { saveRow, dbConfigured } from "@/lib/supabase";
@@ -49,13 +50,8 @@ export async function POST(request: Request) {
   const order = parsed.data;
 
   /*
-   * The bot trap is a FLAG, not a bin.
-   *
-   * It used to return a fake success and drop the submission, which meant a
-   * browser autofilling the hidden field made a real request vanish with no
-   * email, no database row and no log line anywhere. Losing one genuine
-   * order costs far more than processing one spam one, so a hit is now
-   * recorded, shouted about in the log, and marked in the internal email.
+   * The bot trap is a FLAG, not a bin — a browser autofilling a hidden
+   * field must never make a real request disappear.
    */
   const flagged = Boolean(order.honeypot);
   if (flagged) {
@@ -63,7 +59,6 @@ export async function POST(request: Request) {
       kind: "order",
       company: order.company,
       email: order.email,
-      value: order.honeypot?.slice(0, 40),
     });
   }
 
@@ -71,36 +66,31 @@ export async function POST(request: Request) {
   const urgency = URGENCIES.find((u) => u.value === order.urgency);
   const submittedAt = new Date();
 
-  const timingLabel =
-    ATTACHMENT_TIMING.find((t) => t.value === order.attachmentTiming)?.label ?? "";
-
-  const attachmentSummary = order.hasAttachment
-    ? [
-        `Yes — ${timingLabel || "timing not given"}`,
-        order.attachmentNote ? `(${order.attachmentNote})` : "",
-      ]
-        .filter(Boolean)
-        .join(" ")
-    : "No — working from the description alone";
+  /* Files ride along on the internal email so the team opens the real thing. */
+  const { keep: files, rejected } = acceptable(order.attachments ?? []);
+  if (rejected.length > 0) {
+    console.warn("[spendbox] attachments dropped", { reference, rejected });
+  }
 
   const destination = [order.address, order.city, order.region, order.country]
     .filter(Boolean)
     .join(", ");
 
+  const fileLine =
+    files.length > 0
+      ? files.map((f) => `${f.name} (${humanSize(f.size)})`).join("\n")
+      : "";
+
   const detailRows: Row[] = [
-    { label: "What they need", value: order.need },
-    { label: "Categories", value: order.categories.join(", ") },
-    { label: "Quantity / spec", value: order.quantity },
+    { label: "What they wrote", value: order.need },
+    { label: "Categories", value: (order.categories ?? []).join(", ") },
+    { label: "Quantity", value: order.quantity },
     { label: "How soon", value: urgencyLabel(order.urgency) },
-    {
-      label: "Hard deadline",
-      value: order.hasDeadline ? order.neededBy : "None given",
-    },
+    { label: "Hard deadline", value: order.neededBy },
     { label: "Deliver to", value: destination },
     { label: "Budget", value: order.budget },
     { label: "Recurring need", value: order.recurring ? "Yes" : "" },
-    { label: "Purchase order / spreadsheet", value: attachmentSummary },
-    { label: "Extra notes", value: order.notes },
+    { label: "Attached", value: fileLine },
     { label: "Business", value: order.company },
     { label: "Contact", value: `${order.contactName} · ${order.email} · ${order.phone}` },
     { label: "Submitted", value: submittedAt.toUTCString() },
@@ -112,16 +102,16 @@ export async function POST(request: Request) {
     const saved = await saveRow("procurement_requests", {
       reference,
       need: order.need,
-      categories: order.categories,
+      categories: order.categories ?? [],
       quantity: order.quantity || null,
-      has_attachment: Boolean(order.hasAttachment),
-      attachment_timing: order.attachmentTiming || null,
-      attachment_note: order.attachmentNote || null,
+      has_attachment: files.length > 0,
+      attachment_note:
+        files.length > 0 ? files.map((f) => f.name).join(", ") : null,
       urgency: order.urgency,
-      has_deadline: Boolean(order.hasDeadline),
+      has_deadline: Boolean(order.neededBy),
       needed_by: order.neededBy || null,
       country: order.country,
-      city: order.city,
+      city: order.city || null,
       region: order.region,
       address: order.address || null,
       company: order.company,
@@ -130,69 +120,13 @@ export async function POST(request: Request) {
       phone: order.phone,
       budget: order.budget || null,
       recurring: Boolean(order.recurring),
-      notes: order.notes || null,
+      notes: null,
     });
     if (!saved.ok) dbError = saved.error;
   }
 
-  /* ---------------- emails ---------------- */
-  const internalHtml = layout({
-    preheader: `${order.company} needs ${order.categories.join(", ")} — ${
-      urgency?.label ?? order.urgency
-    }`,
-    eyebrow: `New request · ${urgency?.label ?? order.urgency}`,
-    heading: `${order.company} needs sourcing`,
-    intro: `Priority: ${urgencyLabel(order.urgency)}.\nReply to this email to reach ${
-      order.contactName
-    } directly.`,
-    reference,
-    body: rows(detailRows),
-    footnote: dbError
-      ? `Note: this request was NOT saved to the database (${dbError}). The details above are the only copy.`
-      : undefined,
-  });
-
-  const customerRows: Row[] = [
-    { label: "What you asked for", value: order.need },
-    { label: "Categories", value: order.categories.join(", ") },
-    { label: "Quantity / spec", value: order.quantity },
-    { label: "How soon you need it", value: urgencyLabel(order.urgency) },
-    { label: "Needed by", value: order.hasDeadline ? order.neededBy : "" },
-    { label: "Delivering to", value: destination },
-    {
-      label: "Purchase order",
-      value: order.hasAttachment ? attachmentSummary : "",
-    },
-    { label: "Budget you shared", value: order.budget },
-    { label: "Your notes", value: order.notes },
-  ];
-
-  const promise =
-    order.urgency === "same-day"
-      ? "Because this is marked as needed today, someone will call you within the hour."
-      : order.urgency === "48-hours"
-        ? "Because this is urgent, we will come back with offers today."
-        : "We will come back with the best offers within 24 hours.";
-
-  const customerHtml = layout({
-    preheader: `Request ${reference} received — ${promise}`,
-    eyebrow: "Request received",
-    heading: "We have your request",
-    intro: `Thanks ${order.contactName.split(" ")[0]}. ${promise}\n\n${
-      order.hasAttachment && order.attachmentTiming === "now"
-        ? "You said you have a purchase order ready — reply to this email with the file attached and we will quote against it line by line."
-        : "Nothing else is needed from you right now — keep this email for your reference."
-    }`,
-    reference,
-    body: rows(customerRows),
-    cta: { label: "Send another request", href: siteUrl() },
-    footnote: "Something to change? Just reply to this email.",
-  });
-
-  // If email is not configured at all, say so plainly rather than
-  // pretending the request went somewhere.
   if (!emailConfigured()) {
-    console.error("[order] RESEND_API_KEY missing — request not delivered", {
+    console.error("[spendbox] RESEND_API_KEY missing — request not delivered", {
       reference,
       company: order.company,
       email: order.email,
@@ -207,14 +141,67 @@ export async function POST(request: Request) {
     );
   }
 
+  const internalHtml = layout({
+    preheader: `${order.company} — ${order.need.slice(0, 90)}`,
+    eyebrow: `New request · ${urgency?.label ?? order.urgency}`,
+    heading: `${order.company} needs sourcing`,
+    intro: `Priority: ${urgencyLabel(order.urgency)}.\nReply to this email to reach ${
+      order.contactName
+    } directly.${files.length > 0 ? `\n\n${files.length} file${files.length === 1 ? "" : "s"} attached.` : ""}`,
+    reference,
+    body: rows(detailRows),
+    footnote: [
+      dbError
+        ? `Note: this request was NOT saved to the database (${dbError}). The details above are the only copy.`
+        : "",
+      rejected.length > 0
+        ? `The buyer tried to attach: ${rejected.map((r) => `${r.name} — ${r.why}`).join("; ")}.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n") || undefined,
+  });
+
+  const customerRows: Row[] = [
+    { label: "What you asked for", value: order.need },
+    { label: "How soon you need it", value: urgencyLabel(order.urgency) },
+    { label: "Delivering to", value: destination },
+    { label: "Attached", value: fileLine },
+  ];
+
+  const promise =
+    order.urgency === "same-day"
+      ? "Because this is marked as needed today, someone will call you within the hour."
+      : order.urgency === "48-hours"
+        ? "Because this is urgent, we will come back with offers today."
+        : "We will come back with the best offers within 24 hours.";
+
+  const customerHtml = layout({
+    preheader: `Request ${reference} received — ${promise}`,
+    eyebrow: "Request received",
+    heading: "We have your request",
+    intro: `Thanks ${order.contactName.split(" ")[0]}. ${promise}\n\nNothing else is needed from you right now — keep this email for your reference.`,
+    reference,
+    body: rows(customerRows),
+    cta: { label: "Send another request", href: siteUrl() },
+    footnote: "Something to change? Just reply to this email.",
+  });
+
+  /* Resend takes attachments as base64 under the same name the buyer used. */
+  const resendAttachments = files.map((f) => ({
+    filename: f.name,
+    content: f.data,
+  }));
+
   const [internalResult, customerResult] = await Promise.all([
     sendInternal({
       subject: `${flagged ? "[?spam] " : ""}[${
         urgency?.label ?? "New"
-      }] ${order.company} · ${order.categories.slice(0, 2).join(", ")} · ${reference}`,
+      }] ${order.company} · ${(order.categories ?? []).slice(0, 2).join(", ") || "Uncategorised"} · ${reference}`,
       html: internalHtml,
       text: textVersion("New procurement request", reference, detailRows),
       replyTo: order.email,
+      attachments: resendAttachments,
     }),
     sendToCustomer({
       to: order.email,
@@ -239,18 +226,16 @@ export async function POST(request: Request) {
       reference,
       to: order.email,
       error: customerResult.error,
-      from: process.env.EMAIL_FROM ?? "(EMAIL_FROM unset)",
     });
   }
   if (internalResult.ok && customerResult.ok) {
-    console.log("[spendbox] request delivered", { reference, company: order.company });
+    console.log("[spendbox] request delivered", {
+      reference,
+      company: order.company,
+      files: files.length,
+    });
   }
 
-  /*
-   * If nothing worked — no email to us, and no database row — then the
-   * request exists nowhere and it would be a lie to show a success screen.
-   * Tell them, and give them the error so it can actually be fixed.
-   */
   if (!internalResult.ok && !savedToDb) {
     console.error("[spendbox] request LOST — nothing stored, nothing sent", {
       reference,
@@ -274,7 +259,7 @@ export async function POST(request: Request) {
     ok: true,
     reference,
     confirmationSent: customerResult.ok,
-    confirmationError: customerResult.ok ? undefined : customerResult.error,
     urgency: order.urgency,
+    attachmentsRejected: rejected,
   });
 }

@@ -240,11 +240,13 @@ alter table public.invoices enable row level security;
 -- ------------------------------------------------------------
 -- Your team
 --
--- The people who work the dashboard. Two roles:
+-- The people who work with you. Three roles:
 --
 --   admin        sees and does everything, including the numbers
 --   coordinator  the sub-admin: works the requests and sends them
 --                out to merchants, and sees no statistics at all
+--   marketer     never signs in; a name, an email and a phone
+--                number to assign merchants to and send work to
 --
 -- A member with a password can sign in; one without is only a
 -- name to hang work on. The owner account in ADMIN_EMAIL /
@@ -260,7 +262,7 @@ create table if not exists public.team_members (
   phone          text,
 
   role           text not null default 'coordinator'
-                   check (role in ('admin','coordinator')),
+                   check (role in ('admin','coordinator','marketer')),
   active         boolean not null default true,
 
   -- PBKDF2-SHA256, salted. Null means this person cannot sign in.
@@ -287,3 +289,148 @@ create index if not exists vendor_applications_assigned_to_idx
 -- always clear who applied and who was entered for them.
 alter table public.vendor_applications
   add column if not exists added_by_admin boolean not null default false;
+
+-- ------------------------------------------------------------
+-- Marketers
+--
+-- Marketers are team members with the 'marketer' role. They
+-- never sign in. The constraint is replaced rather than edited so
+-- this runs cleanly on a database created before the role existed.
+-- ------------------------------------------------------------
+alter table public.team_members
+  drop constraint if exists team_members_role_check;
+alter table public.team_members
+  add constraint team_members_role_check
+  check (role in ('admin','coordinator','marketer'));
+
+-- Their targets are counted from this date.
+alter table public.team_members
+  add column if not exists started_on date;
+
+-- The marketer who works each merchant.
+alter table public.vendor_applications
+  add column if not exists marketer_id uuid
+    references public.team_members (id) on delete set null;
+
+create index if not exists vendor_applications_marketer_id_idx
+  on public.vendor_applications (marketer_id);
+
+-- The marketer who brought each business in, for their targets.
+alter table public.procurement_requests
+  add column if not exists marketer_id uuid
+    references public.team_members (id) on delete set null;
+
+create index if not exists procurement_requests_marketer_id_idx
+  on public.procurement_requests (marketer_id);
+
+-- ------------------------------------------------------------
+-- The discount each merchant has agreed to
+--
+-- A range, as a percentage off their normal price: the least they
+-- will always give, and the most they will go to for a big order.
+-- ------------------------------------------------------------
+alter table public.vendor_applications
+  add column if not exists discount_min numeric(5,2),
+  add column if not exists discount_max numeric(5,2);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'vendor_applications_discount_check'
+  ) then
+    alter table public.vendor_applications
+      add constraint vendor_applications_discount_check
+      check (
+        (discount_min is null or (discount_min >= 0 and discount_min <= 100)) and
+        (discount_max is null or (discount_max >= 0 and discount_max <= 100)) and
+        (discount_min is null or discount_max is null or discount_min <= discount_max)
+      );
+  end if;
+end $$;
+
+-- ------------------------------------------------------------
+-- Editable documents
+--
+-- The marketer playbook and the merchant agreement template.
+-- Edited in the dashboard; the site ships a sensible default and
+-- uses it until you save your own.
+-- ------------------------------------------------------------
+create table if not exists public.app_documents (
+  key         text primary key,
+  title       text not null,
+  body        text not null,
+  meta        jsonb not null default '{}'::jsonb,
+  updated_at  timestamptz not null default now(),
+  updated_by  text
+);
+
+alter table public.app_documents enable row level security;
+
+-- ------------------------------------------------------------
+-- Merchant agreements (MOU) and their electronic signatures
+--
+-- Each row is frozen at the moment it is sent: the exact text the
+-- merchant was shown, and a SHA-256 fingerprint of it. Signing
+-- records who typed their name, when, from where, and checks the
+-- fingerprint still matches — so nobody can quietly change the
+-- words after they were agreed.
+-- ------------------------------------------------------------
+create table if not exists public.vendor_agreements (
+  id               uuid primary key default gen_random_uuid(),
+  created_at       timestamptz not null default now(),
+
+  reference        text not null unique,
+
+  -- kept even if the merchant is later deleted
+  vendor_id        uuid references public.vendor_applications (id) on delete set null,
+  vendor_company   text not null,
+  vendor_contact   text not null,
+  vendor_email     text not null,
+
+  title            text not null,
+  body             text not null,
+  discount_min     numeric(5,2),
+  discount_max     numeric(5,2),
+  term_months      integer,
+  document_hash    text not null,
+
+  status           text not null default 'sent'
+                     check (status in ('sent','signed','void')),
+  sent_at          timestamptz,
+  created_by       text,
+
+  signed_at        timestamptz,
+  signer_name      text,
+  signer_title     text,
+  signer_ip        text,
+  signer_agent     text,
+
+  voided_at        timestamptz
+);
+
+create index if not exists vendor_agreements_vendor_id_idx
+  on public.vendor_agreements (vendor_id);
+create index if not exists vendor_agreements_status_idx
+  on public.vendor_agreements (status);
+
+alter table public.vendor_agreements enable row level security;
+
+-- ------------------------------------------------------------
+-- A record of every email sent to a team member
+-- ------------------------------------------------------------
+create table if not exists public.team_emails (
+  id          uuid primary key default gen_random_uuid(),
+  created_at  timestamptz not null default now(),
+  member_id   uuid references public.team_members (id) on delete cascade,
+  to_email    text not null,
+  subject     text not null,
+  included    text[] not null default '{}',
+  ok          boolean not null default true,
+  error       text,
+  sent_by     text
+);
+
+create index if not exists team_emails_member_id_idx
+  on public.team_emails (member_id, created_at desc);
+
+alter table public.team_emails enable row level security;

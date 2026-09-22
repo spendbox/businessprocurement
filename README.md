@@ -45,10 +45,12 @@ instead of also having them in a table.
 2. Open **SQL Editor** → **New query**.
 3. Open the file `supabase/schema.sql` in this project, copy everything in it,
    paste it in, and press **Run**. This creates the tables — requests,
-   merchant applications, invoices and your team.
+   merchant applications, invoices, your team, agreements and the editable
+   documents.
 
-   **If you already had a database before invoices, the archive or the team
-   existed, run this same file again.** It is written to be safe on a database with
+   **If you already had a database before any of the newer features
+   (invoices, the archive, the team, marketers, agreements), run this same
+   file again.** It is written to be safe on a database with
    data in it: it only adds what is missing, and touches nothing that is
    already there. Until you do, the Invoices page will tell you so and the
    rest of the dashboard carries on working.
@@ -296,7 +298,7 @@ the pages explain what is missing rather than erroring.
 
 ---
 
-## Your team, and the two roles
+## Your team, and the three roles
 
 Everything here is on the **Team** page in the dashboard.
 
@@ -310,13 +312,17 @@ hand merchants to, which is the point of the next part.
 
 **The two roles:**
 
-| | Admin | Coordinator |
-|---|---|---|
-| Requests, and sending them to merchants | yes | **yes** |
-| The overview, the charts, the numbers | yes | no |
-| Merchants, adding and approving them | yes | no |
-| Invoices and totals | yes | no |
-| The team, and diagnostics | yes | no |
+| | Admin | Coordinator | Marketer |
+|---|---|---|---|
+| Signs in to the dashboard | yes | yes | **never** |
+| Requests, and sending them to merchants | yes | **yes** | no |
+| The overview, the charts, the numbers | yes | no | no |
+| Merchants, agreements, invoices | yes | no | no |
+| The team, marketers and diagnostics | yes | no | no |
+
+A **marketer** is just a name, an email and a phone number. The role cannot
+carry a password at all — the sign-in refuses it even if one were somehow in
+the database. Everything they get from you comes by email.
 
 A **coordinator** is the sub-admin: they work the orders and get them out to
 merchants for quoting, and they see no figures about the business at all. This
@@ -337,6 +343,118 @@ delete the account you are currently signed in with.
 
 **If you get locked out**, your own `ADMIN_EMAIL` / `ADMIN_PASSWORD` in Vercel
 is checked before this table and is not affected by anything on the Team page.
+
+---
+
+## Marketers, their playbook and their targets
+
+Everything here is on the **Marketers** page (admins only).
+
+**Adding one.** Name, email, phone and the date their targets start counting.
+They never sign in.
+
+**Their targets**, out of the box, are **30 businesses on board in their first
+30 days** and **₦10,000,000 in sales within their first 90 days**, each counted
+from their own start date. Change the numbers on the playbook page and they
+change everywhere — the progress bars, the playbook text and every email.
+
+Each marketer's card shows two bars. The colour says whether they are *on
+pace for the deadline*, not just how far along they are — 10 of 30 is fine on
+day 8 and a problem on day 25 — and a thin line marks where they should be by
+today.
+
+**How they are counted.** On any request, set **Brought in by** to the
+marketer. That business then counts towards their 30 — once, however many
+requests it sends, and only if its first request falls inside their window.
+Any invoice on that request counts towards their sales when it is marked
+*paid* (in naira, inside their 90 days). Coordinators can set *Brought in by*
+too, since they are usually the ones on the phone when a business says who
+sent them.
+
+**Assigning merchants.** On a marketer's card, *Assign a merchant* — tick
+*Email them about it* and they get a note with the merchant's details and
+agreed discount. Each of their merchants has a *Move to…* menu to hand it to
+another marketer or unassign it. The merchant list has a *Marketer* menu on
+every row too.
+
+**Removing a marketer** asks who to hand their merchants and businesses to
+(or leaves them unassigned). Nothing about a merchant or a business is ever
+deleted with the person. *Switch off* keeps them on file but out of the
+"all active" email list.
+
+**The playbook** is a full document — the targets, what Spendbox is, their
+merchants and discounts, who to go after, what to say, how to answer doubts,
+a weekly rhythm, how they are counted and the rules. Edit it on **Marketers →
+The playbook** with a live preview beside the text. *Reset to the original*
+puts the shipped version back.
+
+**Emailing marketers.** The box at the bottom of the Marketers page. Start from
+a ready-made email (welcome and playbook, progress check-in, their merchants)
+or write your own; pick who it goes to; tick what to add underneath — their
+merchants and discounts, their progress, the full playbook. Every email is
+**written for the person receiving it**: `{{first_name}}`, their deadlines,
+their merchants and their numbers are filled in one by one, so two marketers
+get two different emails. *Preview* shows exactly what the first person will
+see before anything is sent. Every send is logged, and each card shows when
+that person was last emailed.
+
+### Writing documents and emails
+
+The playbook, the agreement and marketer emails are all written in the same
+plain format:
+
+```
+# Heading            ## Smaller heading        ### Smaller still
+- a bullet           1. a numbered point       --- a dividing line
+**bold words**       a blank line starts a new paragraph
+{{first_name}}       a field, filled in for each person
+```
+
+Click a field in the *Fields you can use* list to drop it in. A field that does
+not exist is flagged in yellow and blocks sending, so a typo never reaches
+anyone as `{{braces}}`.
+
+---
+
+## Merchant discounts and agreements
+
+**The agreed discount** is a range on every merchant — for example *5%–12%*:
+at least 5% off their normal price on every quote, up to 12% on large or
+repeat orders. Set it with *change* on the merchant list, when adding a
+merchant by hand, or when sending their agreement. It shows in the list, in
+the *Send to merchants* picker, in marketer emails and in the agreement.
+
+**Sending an agreement.** On a merchant, *Agreement → Prepare and send*. Set the
+discount, the length and the start date; the preview shows exactly what they
+will read. *Change the words* edits it for this merchant only. Then *Email it
+to them to sign*.
+
+**Signing.** They get an email with a private link that works for 30 days.
+They read the Memorandum of Understanding, type their full name and title,
+tick a box that says plainly what ticking it means, and press *Sign*. A signed
+copy goes to them and to your internal address, attached as a document.
+
+What is recorded, and why you can rely on it:
+
+- **The exact words.** The agreement is frozen when it is sent and a SHA-256
+  fingerprint is taken of every word and number in it. Signing checks the
+  fingerprint again and refuses if anything has changed. The fingerprint is
+  printed on the signed copy.
+- **Who, when and from where** — their typed name and title, the time, the
+  internet address and the browser they signed from.
+- **Once only.** Two clicks, or two people with the same link, cannot both
+  sign it.
+
+On the merchant's agreement page you can open or download any agreement,
+**send the link again** if it expired, or **void** it — a voided agreement's
+link stops working at once. Voiding and re-sending is how you change terms.
+
+**The template.** *Merchants → Agreement template* edits the MOU every merchant
+is sent from now on. Agreements already sent keep exactly the words they had.
+The shipped template covers the parties, what they supply, the agreed
+discount, quotes, delivery, payment, not going round Spendbox to its
+customers, confidentiality, length and ending, and signing — **have a lawyer
+read your version before you rely on it.**
 
 ---
 
@@ -465,9 +583,14 @@ lib/
   supabase.ts    saving
   admin-auth.ts  the dashboard login
   admin-data.ts  the dashboard's database queries
-  roles.ts       the two roles and what each may open
+  roles.ts       the three roles and what each may open
   team.ts        your team, their passwords and who owns which merchant
   admin-guard.ts one place that answers "may this person do that?"
+  marketers.ts   marketers' merchants, progress, and the emails they get
+  agreements.ts  merchant agreements, fingerprints and e-signatures
+  documents.ts   the playbook and agreement template, and their defaults
+  doc-render.ts  turns the plain writing format into safe HTML
+  discount.ts    the agreed discount range, worded the same everywhere
   invoices.ts    invoice maths, validation and the printable document
   attachments.ts what may be attached, and how big it may be
   ratelimit.ts   stops one person spamming the form

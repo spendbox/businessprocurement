@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { MIN_PASSWORD, ROLES, ROLE_DETAIL, ROLE_LABEL, type Role } from "@/lib/roles";
+import { MIN_PASSWORD, ROLES, ROLE_DETAIL, ROLE_LABEL, roleCanSignIn, type Role } from "@/lib/roles";
 import type { TeamMemberView } from "@/lib/team";
 
 const field =
@@ -38,10 +38,12 @@ export function AddMember() {
   const [role, setRole] = useState<Role>("coordinator");
   const [password, setPassword] = useState("");
   const [notes, setNotes] = useState("");
+  const [startedOn, setStartedOn] = useState(new Date().toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const signsIn = roleCanSignIn(role);
   const ready = name.trim().length > 1 && /.+@.+\..+/.test(email);
 
   const add = async () => {
@@ -54,7 +56,8 @@ export function AddMember() {
       phone: phone.trim(),
       role,
       notes: notes.trim(),
-      password,
+      password: signsIn ? password : "",
+      startedOn: signsIn ? "" : startedOn,
     });
     setResult(outcome);
     setErrors(outcome.errors);
@@ -118,22 +121,38 @@ export function AddMember() {
         </label>
       </div>
 
-      <label className="flex flex-col gap-1.5">
-        <span className={label}>Password — leave blank if they will not sign in</span>
-        <input
-          type="text"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="off"
-          placeholder={`At least ${MIN_PASSWORD} characters`}
-          className={field}
-        />
-        {problem("password")}
-        <span className="text-[12.5px] leading-snug text-ink-400">
-          You will not be able to read it back afterwards, so send it to them
-          now — and tell them to sign in at /admin/login with their email.
-        </span>
-      </label>
+      {signsIn ? (
+        <label className="flex flex-col gap-1.5">
+          <span className={label}>Password — leave blank if they will not sign in</span>
+          <input
+            type="text"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="off"
+            placeholder={`At least ${MIN_PASSWORD} characters`}
+            className={field}
+          />
+          {problem("password")}
+          <span className="text-[12.5px] leading-snug text-ink-400">
+            You will not be able to read it back afterwards, so send it to them
+            now — and tell them to sign in at /admin/login with their email.
+          </span>
+        </label>
+      ) : (
+        <label className="flex flex-col gap-1.5 sm:max-w-[260px]">
+          <span className={label}>Targets start</span>
+          <input
+            type="date"
+            value={startedOn}
+            onChange={(e) => setStartedOn(e.target.value)}
+            className={field}
+          />
+          <span className="text-[12.5px] leading-snug text-ink-400">
+            Marketers never sign in. Assign them merchants and email them from the
+            Marketers page.
+          </span>
+        </label>
+      )}
 
       <label className="flex flex-col gap-1.5">
         <span className={label}>Notes (optional)</span>
@@ -172,10 +191,13 @@ export function MemberRow({
   member,
   vendors,
   isSelf,
+  others,
 }: {
   member: TeamMemberView;
   vendors: number;
   isSelf: boolean;
+  /** People their work could be handed to when they are removed. */
+  others: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -185,6 +207,8 @@ export function MemberRow({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [handTo, setHandTo] = useState("");
+  const signsIn = roleCanSignIn(member.role);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const run = async (
@@ -232,7 +256,11 @@ export function MemberRow({
             {member.phone ? ` · ${member.phone}` : ""}
           </p>
           <p className="mt-1 text-[13px] text-ink-400">
-            {member.canSignIn ? "Can sign in" : "No sign-in — a name to assign work to"}
+            {!signsIn
+              ? "Marketer — never signs in"
+              : member.canSignIn
+                ? "Can sign in"
+                : "No sign-in — a name to assign work to"}
             {" · "}
             {vendors === 0
               ? "no merchants yet"
@@ -291,6 +319,7 @@ export function MemberRow({
           </div>
           <p className="-mt-1 text-[12.5px] leading-snug text-ink-400">{ROLE_DETAIL[role]}</p>
 
+          {signsIn && role !== "marketer" && (
           <label className="flex flex-col gap-1.5">
             <span className={label}>
               {member.canSignIn ? "New password" : "Give them a password"}
@@ -304,6 +333,12 @@ export function MemberRow({
               className={field}
             />
           </label>
+          )}
+          {role === "marketer" && member.role !== "marketer" && (
+            <p className="text-[12.5px] font-semibold text-amber-500">
+              Making them a marketer takes their sign-in away.
+            </p>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -316,7 +351,7 @@ export function MemberRow({
                     name: name.trim(),
                     phone: phone.trim(),
                     role,
-                    ...(password ? { password } : {}),
+                    ...(password && roleCanSignIn(role) ? { password } : {}),
                   },
                   () => setPassword(""),
                 )
@@ -326,7 +361,7 @@ export function MemberRow({
               {busy ? "Saving…" : "Save changes"}
             </button>
 
-            {member.canSignIn && (
+            {member.canSignIn && signsIn && (
               <button
                 type="button"
                 disabled={busy}
@@ -339,14 +374,27 @@ export function MemberRow({
 
             {!isSelf &&
               (asking ? (
-                <span className="flex items-center gap-2 rounded-xl border-[1.5px] border-clay-400/40 bg-clay-400/8 px-3 py-2">
+                <span className="flex flex-wrap items-center gap-2 rounded-xl border-[1.5px] border-clay-400/40 bg-clay-400/8 px-3 py-2">
                   <span className="text-[13px] font-semibold text-ink-700">
-                    Remove {member.name}?
+                    Remove {member.name}? Hand their work to
                   </span>
+                  <select
+                    value={handTo}
+                    onChange={(e) => setHandTo(e.target.value)}
+                    aria-label="Hand their work to"
+                    className="min-h-[36px] rounded-lg border-[1.5px] border-bone-200 bg-white px-2 text-[13px] font-semibold text-ink-700"
+                  >
+                    <option value="">nobody</option>
+                    {others.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => run("DELETE", {})}
+                    onClick={() => run("DELETE", { reassignTo: handTo })}
                     className="inline-flex min-h-[36px] items-center rounded-full bg-clay-400 px-3 text-[13px] font-bold text-white disabled:opacity-50"
                   >
                     Yes, remove

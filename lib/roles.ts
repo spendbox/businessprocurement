@@ -5,25 +5,35 @@
  * the edge and asks these questions on every request — it must not drag a
  * database client along with the answer.
  *
- * Two roles, deliberately. An **admin** sees the whole dashboard. A
- * **coordinator** — the sub-admin — works the requests and sends them out to
- * merchants, and never sees a single number about the business: no overview,
- * no charts, no invoices, no totals.
+ * An **admin** sees the whole dashboard. A **coordinator** — the sub-admin —
+ * works the requests and sends them out to merchants, and never sees a single
+ * number about the business: no overview, no charts, no invoices, no totals.
+ * A **marketer** never signs in at all.
  */
 
-export const ROLES = ["admin", "coordinator"] as const;
+export const ROLES = ["admin", "coordinator", "marketer"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   coordinator: "Coordinator",
+  marketer: "Marketer",
 };
 
 export const ROLE_DETAIL: Record<Role, string> = {
   admin: "Everything: requests, merchants, invoices, the numbers and the team.",
   coordinator:
     "Requests only — work them and send them to merchants. No statistics, no invoices.",
+  marketer:
+    "Never signs in. A name, email and phone to assign merchants to, and to send the playbook and their work to.",
 };
+
+/**
+ * Marketers work in the field and hear from us by email. They have no
+ * reason to be inside the dashboard, so the role cannot carry a sign-in at
+ * all — not merely "has no password yet".
+ */
+export const roleCanSignIn = (role: Role): boolean => role !== "marketer";
 
 /** Short enough to type, long enough to matter. */
 export const MIN_PASSWORD = 10;
@@ -51,6 +61,7 @@ export function roleNav(role: Role): { href: string; label: string }[] {
     { href: "/admin/requests", label: "Requests" },
     { href: "/admin/vendors", label: "Merchants" },
     { href: "/admin/invoices", label: "Invoices" },
+    { href: "/admin/marketers", label: "Marketers" },
     { href: "/admin/team", label: "Team" },
     { href: "/admin/diagnostics", label: "Diagnostics" },
   ];

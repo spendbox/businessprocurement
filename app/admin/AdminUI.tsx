@@ -339,6 +339,8 @@ export type MatchVendor = {
   reasons: string[];
   gaps: string[];
   recommended: boolean;
+  /** The agreed discount, already worded, e.g. "5%–12%". */
+  discount?: string;
 };
 
 function Fit({ score }: { score: number }) {
@@ -388,6 +390,9 @@ function VendorPick({
         </span>
         <span className="mt-0.5 block truncate text-[13px] text-ink-400">
           {vendor.contact_name} · {vendor.email}
+          {vendor.discount && vendor.discount !== "not agreed yet" && (
+            <span className="font-semibold text-forest-600"> · {vendor.discount} off</span>
+          )}
         </span>
         {vendor.reasons.length > 0 && (
           <span className="mt-1.5 flex flex-wrap gap-1">

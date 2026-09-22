@@ -61,7 +61,13 @@ function Chips({
   );
 }
 
-export function VendorEntry({ team }: { team: TeamOption[] }) {
+export function VendorEntry({
+  team,
+  marketers,
+}: {
+  team: TeamOption[];
+  marketers: TeamOption[];
+}) {
   const router = useRouter();
 
   const [company, setCompany] = useState("");
@@ -83,6 +89,9 @@ export function VendorEntry({ team }: { team: TeamOption[] }) {
   const [internalNotes, setInternalNotes] = useState("");
   const [status, setStatus] = useState("approved");
   const [assignedTo, setAssignedTo] = useState("");
+  const [marketerId, setMarketerId] = useState("");
+  const [discountMin, setDiscountMin] = useState("");
+  const [discountMax, setDiscountMax] = useState("");
   const [sendWelcome, setSendWelcome] = useState(false);
   const [more, setMore] = useState(false);
 
@@ -130,6 +139,9 @@ export function VendorEntry({ team }: { team: TeamOption[] }) {
           internalNotes: internalNotes.trim(),
           status,
           assignedTo,
+          marketerId,
+          discountMin,
+          discountMax,
           sendWelcome,
         }),
       });
@@ -284,6 +296,34 @@ export function VendorEntry({ team }: { team: TeamOption[] }) {
           </label>
         </div>
 
+        <div className="mt-1 flex flex-col gap-1.5">
+          <span className={label}>Agreed discount for Spendbox businesses</span>
+          <span className="flex flex-wrap items-center gap-2">
+            <input
+              value={discountMin}
+              onChange={(e) => setDiscountMin(e.target.value)}
+              inputMode="decimal"
+              placeholder="from"
+              aria-label="Lowest discount %"
+              className={`${field} w-[96px] tabular-nums`}
+            />
+            <span className="text-ink-400">–</span>
+            <input
+              value={discountMax}
+              onChange={(e) => setDiscountMax(e.target.value)}
+              inputMode="decimal"
+              placeholder="up to"
+              aria-label="Highest discount %"
+              className={`${field} w-[96px] tabular-nums`}
+            />
+            <span className="text-[14px] font-bold text-ink-400">% off their normal price</span>
+          </span>
+          {problem("discountMin")}
+          <span className="text-[12.5px] text-ink-400">
+            Optional now — you can agree it later and it goes into their agreement.
+          </span>
+        </div>
+
         <label className="mt-1 flex items-center gap-2.5">
           <input
             type="checkbox"
@@ -401,6 +441,21 @@ export function VendorEntry({ team }: { team: TeamOption[] }) {
                 Add people on the Team page and they will show up here.
               </span>
             )}
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={label}>Marketer</span>
+            <select
+              value={marketerId}
+              onChange={(e) => setMarketerId(e.target.value)}
+              className={field}
+            >
+              <option value="">Nobody yet</option>
+              {marketers.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 

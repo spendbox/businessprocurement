@@ -56,6 +56,10 @@ type LayoutOptions = {
   body: string;
   cta?: { label: string; href: string };
   footnote?: string;
+  /** Why this person is getting the email. Defaults to the buyer wording. */
+  audience?: string;
+  /** Rendered, trusted HTML placed before the body table — see doc-render. */
+  lead?: string;
 };
 
 export function layout(o: LayoutOptions): string {
@@ -109,10 +113,15 @@ export function layout(o: LayoutOptions): string {
       <h1 style="margin:10px 0 12px;font:700 28px/1.2 Georgia,'Times New Roman',serif;color:${INK};letter-spacing:-.01em;">${escapeHtml(
         o.heading,
       )}</h1>
-      <p style="margin:0 0 24px;font:400 16px/1.62 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">${multiline(
-        o.intro,
-      )}</p>
+      ${
+        o.intro
+          ? `<p style="margin:0 0 24px;font:400 16px/1.62 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">${multiline(
+              o.intro,
+            )}</p>`
+          : ""
+      }
       ${reference}
+      ${o.lead ?? ""}
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%">${o.body}</table>
       ${cta}
     </td></tr>
@@ -120,7 +129,10 @@ export function layout(o: LayoutOptions): string {
     <tr><td style="padding:20px 6px 0;font:400 13px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
       ${o.footnote ? `${multiline(o.footnote)}<br><br>` : ""}
       Spendbox &middot; business procurement, handled by people.<br>
-      You are receiving this because a request was submitted with this email address.
+      ${escapeHtml(
+        o.audience ??
+          "You are receiving this because a request was submitted with this email address.",
+      )}
     </td></tr>
   </table>
 

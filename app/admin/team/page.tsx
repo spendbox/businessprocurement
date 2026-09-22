@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAdminPage } from "@/lib/admin-guard";
 import { ROLE_DETAIL, ROLE_LABEL } from "@/lib/roles";
 import { TeamUnavailable, listTeam, vendorCounts } from "@/lib/team";
@@ -39,6 +40,7 @@ export default async function TeamPage() {
   }
 
   const coordinators = team.filter((m) => m.role === "coordinator").length;
+  const marketers = team.filter((m) => m.role === "marketer").length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -53,13 +55,13 @@ export default async function TeamPage() {
                 coordinators > 0
                   ? ` · ${coordinators} ${coordinators === 1 ? "coordinator" : "coordinators"}`
                   : ""
-              }`}
+              }${marketers > 0 ? ` · ${marketers} ${marketers === 1 ? "marketer" : "marketers"}` : ""}`}
         </p>
       </div>
 
       {/* What the two roles mean, in one place, before anyone picks one. */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {(["admin", "coordinator"] as const).map((role) => (
+      <div className="grid gap-3 sm:grid-cols-3">
+        {(["admin", "coordinator", "marketer"] as const).map((role) => (
           <div
             key={role}
             className="rounded-2xl border border-bone-200 bg-white px-4 py-3.5"
@@ -70,6 +72,14 @@ export default async function TeamPage() {
             <p className="mt-1 text-[13.5px] leading-relaxed text-ink-400">
               {ROLE_DETAIL[role]}
             </p>
+            {role === "marketer" && (
+              <Link
+                href="/admin/marketers"
+                className="mt-2 inline-block text-[13px] font-bold text-forest-500 hover:text-forest-600"
+              >
+                Manage marketers →
+              </Link>
+            )}
           </div>
         ))}
       </div>
@@ -82,6 +92,13 @@ export default async function TeamPage() {
               member={member}
               vendors={counts[member.id] ?? 0}
               isSelf={session.memberId === member.id}
+              others={team
+                .filter(
+                  (o) =>
+                    o.id !== member.id &&
+                    (o.role === "marketer") === (member.role === "marketer"),
+                )
+                .map((o) => ({ id: o.id, name: o.name }))}
             />
           ))}
         </ul>

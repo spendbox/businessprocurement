@@ -116,6 +116,35 @@ not be delivered rather than being shown a fake success screen.
 
 ---
 
+## When email is not arriving
+
+Open **`/admin/diagnostics`**. It reads the live deployment and tells you, in
+order:
+
+1. **Which settings this deployment can actually see.** A variable added in
+   Vercel does nothing until the next deploy — if you added one and did not
+   redeploy, this page will still show it as missing, which is the answer.
+2. **What Resend says.** The *Send a test email* button sends one real email
+   and prints Resend's reply word for word, including the error. That is the
+   difference between "not configured", "rejected by Resend" and "sent but not
+   delivered", and you cannot tell those apart from the form.
+
+The two failures that produce complete silence — nothing in your inbox *and*
+nothing in the Resend log — are:
+
+- **`EMAIL_FROM` uses a domain you have not verified in Resend.** Resend
+  refuses the request outright, so no email record is ever created and the
+  Resend dashboard stays empty. Verify the domain under **Domains**, wait for
+  it to read Verified, then set `EMAIL_FROM` to an address on it.
+- **No verified domain at all.** Resend then only delivers to your own account
+  address, so a test to yourself succeeds while every real buyer gets nothing.
+
+Server logs are on vercel.com under the **Logs** tab (not the build log on a
+deployment). Every line this app writes starts with `spendbox`, so search for
+that. Nothing appears until a request has actually hit the server.
+
+---
+
 ## The admin dashboard
 
 Live at **`/admin`** on your site — for example `https://spendbox.site/admin`.
@@ -154,6 +183,8 @@ build; everyone signed in is signed out the moment you change the secret.
 - **Merchants** — every application, with search and filters, and a dropdown to
   move each between `pending → approved / rejected / paused`. Only *approved*
   merchants are ever offered as recipients.
+- **Diagnostics** — what this deployment can see, and a live test email. The
+  first place to look when mail goes quiet.
 
 The dashboard reads from Supabase, so it needs Supabase configured. Without it
 the pages explain what is missing rather than erroring.
@@ -302,6 +333,12 @@ public/img/           the twelve category illustrations
 - **Supabase is optional on purpose.** If the database is down or misconfigured,
   the request still reaches you by email, and the internal email says the row
   was not saved.
+- **Nothing fails silently.** If a request cannot be emailed *and* cannot be
+  stored, the sender is told so plainly instead of being shown a success
+  screen — a request that exists nowhere must never look like it worked.
+- **The bot trap flags, it does not bin.** It marks a suspicious submission
+  `[?spam]` in the internal email and carries on. Dropping a real order to
+  block a fake one is the wrong trade for this business.
 - **Every animation is turned off** for visitors whose device is set to
   "reduce motion".
 - **Forms are positioned against the phone's visual viewport**, not the page,

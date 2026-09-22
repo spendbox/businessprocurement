@@ -47,8 +47,23 @@ export async function POST(request: Request) {
 
   const vendor = parsed.data;
 
-  if (vendor.honeypot) {
-    return NextResponse.json({ ok: true, reference: makeReference("VND") });
+  /*
+   * The bot trap is a FLAG, not a bin.
+   *
+   * It used to return a fake success and drop the submission, which meant a
+   * browser autofilling the hidden field made a real request vanish with no
+   * email, no database row and no log line anywhere. Losing one genuine
+   * order costs far more than processing one spam one, so a hit is now
+   * recorded, shouted about in the log, and marked in the internal email.
+   */
+  const flagged = Boolean(vendor.honeypot);
+  if (flagged) {
+    console.warn("[spendbox] bot trap tripped — processing anyway", {
+      kind: "vendor",
+      company: vendor.company,
+      email: vendor.email,
+      value: vendor.honeypot?.slice(0, 40),
+    });
   }
 
   const reference = makeReference("VND");
@@ -154,9 +169,9 @@ export async function POST(request: Request) {
 
   const [internalResult, vendorResult] = await Promise.all([
     sendInternal({
-      subject: `[Merchant] ${vendor.company} · ${vendor.categories
-        .slice(0, 2)
-        .join(", ")} · ${reference}`,
+      subject: `${flagged ? "[?spam] " : ""}[Merchant] ${
+        vendor.company
+      } · ${vendor.categories.slice(0, 2).join(", ")} · ${reference}`,
       html: internalHtml,
       text: textVersion("New merchant application", reference, detailRows),
       replyTo: vendor.email,
@@ -169,16 +184,54 @@ export async function POST(request: Request) {
     }),
   ]);
 
+  const savedToDb = dbConfigured() && !dbError;
+
   if (!internalResult.ok) {
-    console.error("[vendor] internal email failed", reference, internalResult.error);
+    console.error("[spendbox] internal merchant email FAILED", {
+      reference,
+      error: internalResult.error,
+      from: process.env.EMAIL_FROM ?? "(EMAIL_FROM unset)",
+      to: process.env.EMAIL_TO_INTERNAL ?? "(EMAIL_TO_INTERNAL unset)",
+    });
   }
   if (!vendorResult.ok) {
-    console.error("[vendor] vendor email failed", reference, vendorResult.error);
+    console.error("[spendbox] merchant confirmation FAILED", {
+      reference,
+      to: vendor.email,
+      error: vendorResult.error,
+      from: process.env.EMAIL_FROM ?? "(EMAIL_FROM unset)",
+    });
+  }
+  if (internalResult.ok && vendorResult.ok) {
+    console.log("[spendbox] merchant application delivered", {
+      reference,
+      company: vendor.company,
+    });
+  }
+
+  if (!internalResult.ok && !savedToDb) {
+    console.error("[spendbox] application LOST — nothing stored, nothing sent", {
+      reference,
+      company: vendor.company,
+      email: vendor.email,
+      emailError: internalResult.error,
+      dbError,
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          "We could not record your application just now. Please email us directly and we will pick it up.",
+        detail: internalResult.error,
+      },
+      { status: 502 },
+    );
   }
 
   return NextResponse.json({
     ok: true,
     reference,
     confirmationSent: vendorResult.ok,
+    confirmationError: vendorResult.ok ? undefined : vendorResult.error,
   });
 }
